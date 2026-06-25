@@ -14,6 +14,7 @@ export type ProfileDraft = {
   gender: GenderIdentity;
   wantsToMeet: string[];
   photoUri: string;
+  legiUri: string;
   university?: string;
   degree?: string;
   bio?: string;
