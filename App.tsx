@@ -1,5 +1,7 @@
+import { makeRedirectUri } from "expo-auth-session";
 import * as ImagePicker from "expo-image-picker";
 import { StatusBar } from "expo-status-bar";
+import * as WebBrowser from "expo-web-browser";
 import { useState } from "react";
 import {
   Alert,
@@ -16,9 +18,11 @@ import {
 } from "react-native";
 
 import { theme } from "./src/components/Theme";
-import { createVerificationRequest, saveProfile, signInWithEmail, signUpWithEmail } from "./src/lib/profileApi";
+import { createVerificationRequest, saveProfile } from "./src/lib/profileApi";
 import { supabase } from "./src/lib/supabase";
 import { GenderIdentity, ProfileDraft } from "./src/lib/types";
+
+WebBrowser.maybeCompleteAuthSession();
 
 const genderOptions: Array<{ label: string; value: GenderIdentity }> = [
   { label: "Woman", value: "woman" },
@@ -35,9 +39,7 @@ const meetOptions = ["women", "men", "non_binary_people", "everyone"];
 
 export default function App() {
   const [step, setStep] = useState<"auth" | "onboarding" | "app">("auth");
-  const [verificationMethod, setVerificationMethod] = useState<"switch_edu_id" | "legi_card">("switch_edu_id");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const [draft, setDraft] = useState<ProfileDraft>({
     name: "",
     birthdate: "",
@@ -50,19 +52,44 @@ export default function App() {
 
   const canFinish = draft.name.trim() && draft.birthdate && draft.photoUri;
 
-  async function authenticate(mode: "sign-in" | "sign-up") {
-    if (!email || !password) {
-      Alert.alert("Missing details", "Enter email and password first.");
+  async function signInWithSwitchEduId() {
+    const providerId = process.env.EXPO_PUBLIC_SUPABASE_SWITCH_EDU_ID_PROVIDER_ID;
+    if (!providerId) {
+      Alert.alert(
+        "SWITCH edu-ID is not configured yet",
+        "Add EXPO_PUBLIC_SUPABASE_SWITCH_EDU_ID_PROVIDER_ID to .env after creating the SWITCH edu-ID OIDC provider in Supabase.",
+      );
       return;
     }
 
-    const result = mode === "sign-in" ? await signInWithEmail(email, password) : await signUpWithEmail(email, password);
-    if (result.error) {
-      Alert.alert("Auth failed", result.error.message);
-      return;
-    }
+    setIsSigningIn(true);
+    const redirectTo = makeRedirectUri({ scheme: "unimatch", path: "auth/callback" });
 
-    setStep("onboarding");
+    try {
+      const { data, error } = await supabase.auth.signInWithSSO({
+        providerId,
+        options: { redirectTo },
+      });
+
+      if (error) throw error;
+      if (!data?.url) throw new Error("Supabase did not return a SWITCH edu-ID login URL.");
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      if (result.type !== "success") return;
+
+      const callbackUrl = new URL(result.url);
+      const code = callbackUrl.searchParams.get("code");
+      if (!code) throw new Error("No login code was returned by SWITCH edu-ID.");
+
+      const sessionResult = await supabase.auth.exchangeCodeForSession(code);
+      if (sessionResult.error) throw sessionResult.error;
+
+      setStep("onboarding");
+    } catch (error) {
+      Alert.alert("SWITCH edu-ID login failed", error instanceof Error ? error.message : "Unknown error");
+    } finally {
+      setIsSigningIn(false);
+    }
   }
 
   async function choosePhoto() {
@@ -85,7 +112,7 @@ export default function App() {
     }
 
     try {
-      await createVerificationRequest(data.user.id, verificationMethod);
+      await createVerificationRequest(data.user.id, "switch_edu_id");
       const result = await saveProfile(data.user.id, draft);
       if (result.error) throw result.error;
       setStep("app");
@@ -109,34 +136,24 @@ export default function App() {
 
             <View style={styles.section}>
               <Text style={styles.title}>Verify your student status</Text>
-              <Text style={styles.caption}>Start with SWITCH edu-ID or a student Legi review.</Text>
+              <Text style={styles.caption}>Use SWITCH edu-ID before creating a UniMatch profile.</Text>
             </View>
 
-            <View style={styles.section}>
-              <Choice
-                selected={verificationMethod === "switch_edu_id"}
-                title="SWITCH edu-ID"
-                subtitle="University SSO. In the MVP this is a placeholder."
-                onPress={() => setVerificationMethod("switch_edu_id")}
-              />
-              <Choice
-                selected={verificationMethod === "legi_card"}
-                title="Student Legi"
-                subtitle="Manual review flow for the first test version."
-                onPress={() => setVerificationMethod("legi_card")}
-              />
+            <View style={styles.notice}>
+              <Text style={styles.heading}>Browser login required</Text>
+              <Text style={styles.caption}>
+                UniMatch opens the secure SWITCH edu-ID login in the system browser. Registration starts only after a valid student login.
+              </Text>
             </View>
 
-            <View style={styles.section}>
-              <TextInput style={styles.input} placeholder="Email" autoCapitalize="none" value={email} onChangeText={setEmail} />
-              <TextInput style={styles.input} placeholder="Password" secureTextEntry value={password} onChangeText={setPassword} />
-            </View>
-
-            <Pressable style={styles.cta} onPress={() => authenticate("sign-up")}>
-              <Text style={styles.ctaText}>Create account</Text>
+            <Pressable style={[styles.cta, isSigningIn && styles.disabled]} disabled={isSigningIn} onPress={signInWithSwitchEduId}>
+              <Text style={styles.ctaText}>{isSigningIn ? "Opening SWITCH edu-ID..." : "Continue with SWITCH edu-ID"}</Text>
             </Pressable>
-            <Pressable style={styles.outline} onPress={() => authenticate("sign-in")}>
-              <Text style={styles.outlineText}>Sign in</Text>
+            <Pressable
+              style={styles.outline}
+              onPress={() => Alert.alert("Legi review", "Legi review can be added as a manual fallback, but real account login now starts with SWITCH edu-ID.")}
+            >
+              <Text style={styles.outlineText}>I only have a student Legi</Text>
             </Pressable>
           </ScrollView>
         )}
@@ -203,7 +220,7 @@ export default function App() {
             <View style={styles.notice}>
               <Text style={styles.heading}>Real backend connected</Text>
               <Text style={styles.caption}>
-                Accounts, profile data and photo upload now go through Supabase. Next we build the Nearby, message request and match screens against the database tables.
+                SWITCH edu-ID login, profile data and photo upload now go through Supabase. Next we build Nearby, message requests and matches against the database.
               </Text>
             </View>
             <Pressable style={styles.outline} onPress={() => setStep("onboarding")}>
@@ -213,15 +230,6 @@ export default function App() {
         )}
       </KeyboardAvoidingView>
     </SafeAreaView>
-  );
-}
-
-function Choice(props: { selected: boolean; title: string; subtitle: string; onPress: () => void }) {
-  return (
-    <Pressable style={[styles.choice, props.selected && styles.choiceSelected]} onPress={props.onPress}>
-      <Text style={styles.choiceTitle}>{props.title}</Text>
-      <Text style={styles.caption}>{props.subtitle}</Text>
-    </Pressable>
   );
 }
 
@@ -249,9 +257,6 @@ const styles = StyleSheet.create({
   caption: { color: theme.muted, fontSize: 13, lineHeight: 18 },
   input: { backgroundColor: theme.surface, borderRadius: theme.radius, paddingHorizontal: 12, paddingVertical: 12, fontSize: 16 },
   bio: { minHeight: 90, textAlignVertical: "top" },
-  choice: { borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: theme.radius, padding: 12 },
-  choiceSelected: { borderColor: theme.accent, backgroundColor: theme.tagBg, borderWidth: 1.5 },
-  choiceTitle: { fontSize: 16 },
   cta: { height: 48, borderRadius: theme.radius, backgroundColor: theme.text, alignItems: "center", justifyContent: "center" },
   ctaText: { color: "#fff", fontSize: 14, fontWeight: "500" },
   outline: { height: 48, borderRadius: theme.radius, borderWidth: 1.5, borderColor: theme.text, alignItems: "center", justifyContent: "center" },
