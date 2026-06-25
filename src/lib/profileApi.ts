@@ -12,6 +12,15 @@ export async function signUpWithEmail(email: string, password: string) {
   return supabase.auth.signUp({ email, password });
 }
 
+export async function sendMagicLink(email: string) {
+  return supabase.auth.signInWithOtp({
+    email,
+    options: {
+      shouldCreateUser: true,
+    },
+  });
+}
+
 export async function saveProfile(userId: string, draft: ProfileDraft) {
   const photoPath = await uploadProfilePhoto(userId, draft.photoUri);
 
@@ -28,11 +37,14 @@ export async function saveProfile(userId: string, draft: ProfileDraft) {
   });
 }
 
-export async function createVerificationRequest(userId: string, method: "switch_edu_id" | "legi_card") {
+export async function createVerificationRequest(userId: string, legiUri: string) {
+  const legiDocumentPath = await uploadVerificationDocument(userId, legiUri);
+
   return supabase.from("verification_requests").insert({
     user_id: userId,
-    method,
-    status: method === "switch_edu_id" ? "verified" : "pending",
+    method: "legi_card",
+    status: "pending",
+    legi_document_path: legiDocumentPath,
   });
 }
 
@@ -48,13 +60,20 @@ export async function sendMessageRequest(recipientId: string, note: string) {
 }
 
 async function uploadProfilePhoto(userId: string, photoUri: string) {
+  return uploadImage("profile-photos", `${userId}/profile.jpg`, photoUri);
+}
+
+async function uploadVerificationDocument(userId: string, photoUri: string) {
+  return uploadImage("verification-documents", `${userId}/legi.jpg`, photoUri);
+}
+
+async function uploadImage(bucket: string, path: string, photoUri: string) {
   const base64 = await FileSystem.readAsStringAsync(photoUri, {
     encoding: FileSystem.EncodingType.Base64,
   });
-  const path = `${userId}/profile.jpg`;
 
   const { error } = await supabase.storage
-    .from("profile-photos")
+    .from(bucket)
     .upload(path, decode(base64), {
       contentType: "image/jpeg",
       upsert: true,
