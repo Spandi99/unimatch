@@ -20,7 +20,7 @@ The original prototype was native SwiftUI for iOS only. This repository starts t
 2. Run `supabase/schema.sql` in the Supabase SQL editor.
 3. Create a private storage bucket named `profile-photos`.
 4. Copy `.env.example` to `.env` and fill in the project URL and publishable key.
-5. Configure SWITCH edu-ID SSO. See `docs/switch-edu-id.md`.
+5. Configure SWITCH edu-ID as a custom OAuth/OIDC provider. See `docs/switch-edu-id.md`.
 6. Install dependencies:
 
 ```bash
