@@ -11,7 +11,7 @@ The original prototype was native SwiftUI for iOS only. This repository starts t
 - Profile records stored in Supabase.
 - Photo upload target via Supabase Storage.
 - Nearby/discover/matches/message-request data model prepared.
-- The previous SwiftUI prototype is kept in `legacy-ios/` for reference.
+- The previous SwiftUI prototype remains available locally as design reference.
 
 ## Setup
 
@@ -32,7 +32,3 @@ npm run start
 ```
 
 Use Expo Go or a development build to run it on iPhone and Android.
-
-## GitHub
-
-This folder is ready to become the GitHub repository. Suggested repo name: `unimatch`.
