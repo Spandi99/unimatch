@@ -14,6 +14,7 @@ export type ProfileDraft = {
   gender: GenderIdentity;
   wantsToMeet: string[];
   photoUri: string;
+  legiUri: string;
   university?: string;
   degree?: string;
   bio?: string;
@@ -30,4 +31,3 @@ export type PublicProfile = {
   bio: string | null;
   photo_path: string | null;
 };
-

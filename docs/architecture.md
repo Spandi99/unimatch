@@ -9,12 +9,13 @@ UniMatch should feel local and low-pressure. Nearby mode is opt-in, approximate 
 - App: Expo + React Native + TypeScript.
 - Backend: Supabase Auth, Postgres, Row Level Security and Storage.
 - Location: approximate geohash or coarse coordinates only while nearby mode is enabled.
-- Verification: use SWITCH edu-ID through a Supabase custom OAuth/OIDC provider before onboarding. Keep Legi as a manual fallback path.
+- Verification: use a Legi photo review for the MVP. SWITCH edu-ID can be added later when official access is available.
 
 ## Core entities
 
 - `profiles`: public-ish dating profile, linked to an auth user.
 - `verification_requests`: SWITCH/Legi verification state.
+- `legi_review_checks`: reviewer checklist for visible Legi criteria.
 - `nearby_sessions`: temporary visibility records.
 - `message_requests`: pending intro messages.
 - `matches`: accepted connections.
@@ -23,6 +24,7 @@ UniMatch should feel local and low-pressure. Nearby mode is opt-in, approximate 
 ## Privacy defaults
 
 - Store only one profile photo for the MVP.
+- Store Legi photos in a separate private `verification-documents` bucket.
 - Never expose exact GPS coordinates to other users.
 - Delete or expire nearby sessions automatically.
 - Require an accepted message request before chat.

@@ -1,7 +1,5 @@
-import { makeRedirectUri } from "expo-auth-session";
 import * as ImagePicker from "expo-image-picker";
 import { StatusBar } from "expo-status-bar";
-import * as WebBrowser from "expo-web-browser";
 import { useState } from "react";
 import {
   Alert,
@@ -18,11 +16,9 @@ import {
 } from "react-native";
 
 import { theme } from "./src/components/Theme";
-import { createVerificationRequest, saveProfile } from "./src/lib/profileApi";
+import { createVerificationRequest, saveProfile, signInWithEmail, signUpWithEmail } from "./src/lib/profileApi";
 import { supabase } from "./src/lib/supabase";
 import { GenderIdentity, ProfileDraft } from "./src/lib/types";
-
-WebBrowser.maybeCompleteAuthSession();
 
 const genderOptions: Array<{ label: string; value: GenderIdentity }> = [
   { label: "Woman", value: "woman" },
@@ -39,63 +35,43 @@ const meetOptions = ["women", "men", "non_binary_people", "everyone"];
 
 export default function App() {
   const [step, setStep] = useState<"auth" | "onboarding" | "app">("auth");
-  const [isSigningIn, setIsSigningIn] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [draft, setDraft] = useState<ProfileDraft>({
     name: "",
     birthdate: "",
     gender: "non_binary",
     wantsToMeet: ["everyone"],
     photoUri: "",
+    legiUri: "",
     university: "ETH Zurich",
     bio: "",
   });
 
-  const canFinish = draft.name.trim() && draft.birthdate && draft.photoUri;
+  const canFinish = draft.name.trim() && draft.birthdate && draft.photoUri && draft.legiUri;
 
-  async function signInWithSwitchEduId() {
-    const provider = process.env.EXPO_PUBLIC_SUPABASE_SWITCH_EDU_ID_PROVIDER;
-    if (!provider) {
-      Alert.alert(
-        "SWITCH edu-ID is not configured yet",
-        "Add EXPO_PUBLIC_SUPABASE_SWITCH_EDU_ID_PROVIDER to .env after creating the SWITCH edu-ID custom OIDC provider in Supabase.",
-      );
+  async function authenticate(mode: "sign-in" | "sign-up") {
+    if (!email.trim() || !password) {
+      Alert.alert("Missing details", "Enter your private email and password first.");
       return;
     }
 
-    setIsSigningIn(true);
-    const redirectTo = makeRedirectUri({ scheme: "unimatch", path: "auth/callback" });
+    setIsAuthenticating(true);
+    const result = mode === "sign-in"
+      ? await signInWithEmail(email.trim(), password)
+      : await signUpWithEmail(email.trim(), password);
+    setIsAuthenticating(false);
 
-    try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: provider as `custom:${string}`,
-        options: {
-          redirectTo,
-          skipBrowserRedirect: true,
-        },
-      });
-
-      if (error) throw error;
-      if (!data?.url) throw new Error("Supabase did not return a SWITCH edu-ID login URL.");
-
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-      if (result.type !== "success") return;
-
-      const callbackUrl = new URL(result.url);
-      const code = callbackUrl.searchParams.get("code");
-      if (!code) throw new Error("No login code was returned by SWITCH edu-ID.");
-
-      const sessionResult = await supabase.auth.exchangeCodeForSession(code);
-      if (sessionResult.error) throw sessionResult.error;
-
-      setStep("onboarding");
-    } catch (error) {
-      Alert.alert("SWITCH edu-ID login failed", error instanceof Error ? error.message : "Unknown error");
-    } finally {
-      setIsSigningIn(false);
+    if (result.error) {
+      Alert.alert("Authentication failed", result.error.message);
+      return;
     }
+
+    setStep("onboarding");
   }
 
-  async function choosePhoto() {
+  async function chooseProfilePhoto() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
@@ -104,6 +80,22 @@ export default function App() {
     });
 
     if (!result.canceled) setDraft((current) => ({ ...current, photoUri: result.assets[0].uri }));
+  }
+
+  async function takeLegiPhoto() {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Camera access needed", "Please allow camera access to photograph your Legi.");
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: false,
+      quality: 0.9,
+    });
+
+    if (!result.canceled) setDraft((current) => ({ ...current, legiUri: result.assets[0].uri }));
   }
 
   async function finishProfile() {
@@ -115,12 +107,15 @@ export default function App() {
     }
 
     try {
-      await createVerificationRequest(data.user.id, "switch_edu_id");
+      const verification = await createVerificationRequest(data.user.id, draft.legiUri);
+      if (verification.error) throw verification.error;
+
       const result = await saveProfile(data.user.id, draft);
       if (result.error) throw result.error;
+
       setStep("app");
     } catch (error) {
-      Alert.alert("Could not save profile", error instanceof Error ? error.message : "Unknown error");
+      Alert.alert("Could not submit profile", error instanceof Error ? error.message : "Unknown error");
     }
   }
 
@@ -138,25 +133,18 @@ export default function App() {
             </View>
 
             <View style={styles.section}>
-              <Text style={styles.title}>Verify your student status</Text>
-              <Text style={styles.caption}>Use SWITCH edu-ID before creating a UniMatch profile.</Text>
+              <Text style={styles.title}>Create your account</Text>
+              <Text style={styles.caption}>Use a private email for login. Student status is checked with a Legi photo in the next step.</Text>
             </View>
 
-            <View style={styles.notice}>
-              <Text style={styles.heading}>Browser login required</Text>
-              <Text style={styles.caption}>
-                UniMatch opens the secure SWITCH edu-ID login in the system browser. Registration starts only after a valid student login.
-              </Text>
-            </View>
+            <TextInput style={styles.input} placeholder="Email" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
+            <TextInput style={styles.input} placeholder="Password" secureTextEntry value={password} onChangeText={setPassword} />
 
-            <Pressable style={[styles.cta, isSigningIn && styles.disabled]} disabled={isSigningIn} onPress={signInWithSwitchEduId}>
-              <Text style={styles.ctaText}>{isSigningIn ? "Opening SWITCH edu-ID..." : "Continue with SWITCH edu-ID"}</Text>
+            <Pressable style={[styles.cta, isAuthenticating && styles.disabled]} disabled={isAuthenticating} onPress={() => authenticate("sign-up")}>
+              <Text style={styles.ctaText}>{isAuthenticating ? "Working..." : "Create account"}</Text>
             </Pressable>
-            <Pressable
-              style={styles.outline}
-              onPress={() => Alert.alert("Legi review", "Legi review can be added as a manual fallback, but real account login now starts with SWITCH edu-ID.")}
-            >
-              <Text style={styles.outlineText}>I only have a student Legi</Text>
+            <Pressable style={styles.outline} onPress={() => authenticate("sign-in")}>
+              <Text style={styles.outlineText}>Sign in</Text>
             </Pressable>
           </ScrollView>
         )}
@@ -164,13 +152,13 @@ export default function App() {
         {step === "onboarding" && (
           <ScrollView contentContainerStyle={styles.screen}>
             <Text style={styles.navTitle}>Create profile</Text>
-            <Pressable style={styles.photoBox} onPress={choosePhoto}>
+            <Pressable style={styles.photoBox} onPress={chooseProfilePhoto}>
               {draft.photoUri ? (
                 <Image source={{ uri: draft.photoUri }} style={styles.photo} />
               ) : (
                 <View>
                   <Text style={styles.title}>Add one profile photo</Text>
-                  <Text style={styles.caption}>This is the only photo people see nearby.</Text>
+                  <Text style={styles.caption}>This is the only dating photo shown nearby.</Text>
                 </View>
               )}
             </Pressable>
@@ -208,26 +196,43 @@ export default function App() {
             </View>
 
             <TextInput style={styles.input} placeholder="University" value={draft.university} onChangeText={(university) => setDraft({ ...draft, university })} />
-            <TextInput style={styles.input} placeholder="Degree" value={draft.degree} onChangeText={(degree) => setDraft({ ...draft, degree })} />
+            <TextInput style={styles.input} placeholder="Faculty / degree" value={draft.degree} onChangeText={(degree) => setDraft({ ...draft, degree })} />
             <TextInput style={[styles.input, styles.bio]} placeholder="Bio" multiline value={draft.bio} onChangeText={(bio) => setDraft({ ...draft, bio })} />
 
+            <View style={styles.notice}>
+              <Text style={styles.heading}>Legi review</Text>
+              <Text style={styles.caption}>
+                Your Legi photo must show a face photo, birthdate, first and last name, faculty, and an 8-digit student number like 21-114-004.
+              </Text>
+            </View>
+            <Pressable style={styles.photoBox} onPress={takeLegiPhoto}>
+              {draft.legiUri ? (
+                <Image source={{ uri: draft.legiUri }} style={styles.photo} />
+              ) : (
+                <View>
+                  <Text style={styles.title}>Photograph your Legi</Text>
+                  <Text style={styles.caption}>Used only for student verification.</Text>
+                </View>
+              )}
+            </Pressable>
+
             <Pressable style={[styles.cta, !canFinish && styles.disabled]} disabled={!canFinish} onPress={finishProfile}>
-              <Text style={styles.ctaText}>Start UniMatch</Text>
+              <Text style={styles.ctaText}>Submit for review</Text>
             </Pressable>
           </ScrollView>
         )}
 
         {step === "app" && (
           <ScrollView contentContainerStyle={styles.screen}>
-            <Text style={styles.navTitle}>Nearby</Text>
+            <Text style={styles.navTitle}>Review pending</Text>
             <View style={styles.notice}>
-              <Text style={styles.heading}>Real backend connected</Text>
+              <Text style={styles.heading}>Profile submitted</Text>
               <Text style={styles.caption}>
-                SWITCH edu-ID login, profile data and photo upload now go through Supabase. Next we build Nearby, message requests and matches against the database.
+                Your Legi is waiting for a short review. Once the visible criteria are confirmed, your account can be provisionally enabled.
               </Text>
             </View>
             <Pressable style={styles.outline} onPress={() => setStep("onboarding")}>
-              <Text style={styles.outlineText}>Edit profile</Text>
+              <Text style={styles.outlineText}>Edit submission</Text>
             </Pressable>
           </ScrollView>
         )}

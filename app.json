@@ -11,6 +11,7 @@
       "bundleIdentifier": "ch.unimatch.app",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "UniMatch needs access to choose your one profile photo.",
+        "NSCameraUsageDescription": "UniMatch needs camera access to photograph your student Legi for verification.",
         "NSLocationWhenInUseUsageDescription": "UniMatch uses approximate location to show nearby students only when nearby mode is enabled."
       }
     },
@@ -18,9 +19,9 @@
       "package": "ch.unimatch.app",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
+        "CAMERA",
         "READ_MEDIA_IMAGES"
       ]
     }
   }
 }
-
