@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "UniMatch",
+    "slug": "unimatch",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "unimatch",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "ch.unimatch.app",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "UniMatch needs access to choose your one profile photo.",
+        "NSLocationWhenInUseUsageDescription": "UniMatch uses approximate location to show nearby students only when nearby mode is enabled."
+      }
+    },
+    "android": {
+      "package": "ch.unimatch.app",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "READ_MEDIA_IMAGES"
+      ]
+    }
+  }
+}
