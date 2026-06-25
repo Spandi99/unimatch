@@ -7,6 +7,7 @@ The original prototype was native SwiftUI for iOS only. This repository starts t
 ## Current scope
 
 - Student verification flow placeholder: SWITCH edu-ID or Legi review.
+- SWITCH edu-ID browser login required before profile registration.
 - Onboarding with name, birthdate, gender, preferences and one profile photo.
 - Profile records stored in Supabase.
 - Photo upload target via Supabase Storage.
@@ -19,13 +20,14 @@ The original prototype was native SwiftUI for iOS only. This repository starts t
 2. Run `supabase/schema.sql` in the Supabase SQL editor.
 3. Create a private storage bucket named `profile-photos`.
 4. Copy `.env.example` to `.env` and fill in the project URL and publishable key.
-5. Install dependencies:
+5. Configure SWITCH edu-ID SSO. See `docs/switch-edu-id.md`.
+6. Install dependencies:
 
 ```bash
 npm install
 ```
 
-6. Start the app:
+7. Start the app:
 
 ```bash
 npm run start
@@ -36,4 +38,3 @@ Use Expo Go or a development build to run it on iPhone and Android.
 ## GitHub
 
 This folder is ready to become the GitHub repository. Suggested repo name: `unimatch`.
-

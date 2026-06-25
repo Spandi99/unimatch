@@ -9,7 +9,7 @@ UniMatch should feel local and low-pressure. Nearby mode is opt-in, approximate 
 - App: Expo + React Native + TypeScript.
 - Backend: Supabase Auth, Postgres, Row Level Security and Storage.
 - Location: approximate geohash or coarse coordinates only while nearby mode is enabled.
-- Verification: start with manual Legi review, later add SWITCH edu-ID through an OAuth/OIDC integration if access is available.
+- Verification: use SWITCH edu-ID through Supabase Enterprise SSO/OIDC before onboarding. Keep Legi as a manual fallback path.
 
 ## Core entities
 
@@ -27,4 +27,3 @@ UniMatch should feel local and low-pressure. Nearby mode is opt-in, approximate 
 - Delete or expire nearby sessions automatically.
 - Require an accepted message request before chat.
 - Keep verification documents separate from public profile data.
-
