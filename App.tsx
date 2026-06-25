@@ -53,11 +53,11 @@ export default function App() {
   const canFinish = draft.name.trim() && draft.birthdate && draft.photoUri;
 
   async function signInWithSwitchEduId() {
-    const providerId = process.env.EXPO_PUBLIC_SUPABASE_SWITCH_EDU_ID_PROVIDER_ID;
-    if (!providerId) {
+    const provider = process.env.EXPO_PUBLIC_SUPABASE_SWITCH_EDU_ID_PROVIDER;
+    if (!provider) {
       Alert.alert(
         "SWITCH edu-ID is not configured yet",
-        "Add EXPO_PUBLIC_SUPABASE_SWITCH_EDU_ID_PROVIDER_ID to .env after creating the SWITCH edu-ID OIDC provider in Supabase.",
+        "Add EXPO_PUBLIC_SUPABASE_SWITCH_EDU_ID_PROVIDER to .env after creating the SWITCH edu-ID custom OIDC provider in Supabase.",
       );
       return;
     }
@@ -66,9 +66,12 @@ export default function App() {
     const redirectTo = makeRedirectUri({ scheme: "unimatch", path: "auth/callback" });
 
     try {
-      const { data, error } = await supabase.auth.signInWithSSO({
-        providerId,
-        options: { redirectTo },
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: provider as `custom:${string}`,
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+        },
       });
 
       if (error) throw error;
