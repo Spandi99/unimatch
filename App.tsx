@@ -32,12 +32,45 @@ const genderOptions: Array<{ label: string; value: GenderIdentity }> = [
 ];
 
 const meetOptions = ["women", "men", "non_binary_people", "everyone"];
+const institutionGroups = [
+  {
+    title: "Universities in Bern",
+    options: ["University of Bern", "PHBern - University of Teacher Education"],
+  },
+  {
+    title: "Universities of applied sciences",
+    options: [
+      "Bern University of Applied Sciences BFH",
+      "BFH - Bern Academy of the Arts HKB",
+      "BFH - School of Agricultural, Forest and Food Sciences HAFL",
+      "BFH - Health Professions",
+      "BFH - Business",
+      "BFH - Social Work",
+      "BFH - Engineering and Computer Science",
+      "BFH - Architecture, Wood and Civil Engineering",
+    ],
+  },
+  {
+    title: "Higher technical schools in Bern",
+    options: [
+      "medi - Center for Medical Education Bern",
+      "gibb Higher Technical School Bern",
+      "TEKO Swiss Technical College Bern",
+      "sfb Higher Technical School Bern",
+      "Feusi Higher Technical School Bern",
+      "WKS KV Bildung Bern",
+      "BFF Bern Higher Technical School",
+      "Hotelfachschule Thun",
+    ],
+  },
+];
 
 export default function App() {
   const [step, setStep] = useState<"auth" | "onboarding" | "app">("auth");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [showInstitutions, setShowInstitutions] = useState(false);
   const [draft, setDraft] = useState<ProfileDraft>({
     name: "",
     birthdate: "",
@@ -45,7 +78,7 @@ export default function App() {
     wantsToMeet: ["everyone"],
     photoUri: "",
     legiUri: "",
-    university: "ETH Zurich",
+    university: "University of Bern",
     bio: "",
   });
 
@@ -119,6 +152,12 @@ export default function App() {
     }
   }
 
+  function updateBirthdate(value: string) {
+    const digits = value.replace(/\D/g, "").slice(0, 8);
+    const parts = [digits.slice(0, 4), digits.slice(4, 6), digits.slice(6, 8)].filter(Boolean);
+    setDraft({ ...draft, birthdate: parts.join("-") });
+  }
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="dark" />
@@ -166,9 +205,10 @@ export default function App() {
             <TextInput style={styles.input} placeholder="Name" value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} />
             <TextInput
               style={styles.input}
-              placeholder="Birthdate, e.g. 2002-04-18"
+              placeholder="YYYY-MM-DD"
+              keyboardType="number-pad"
               value={draft.birthdate}
-              onChangeText={(birthdate) => setDraft({ ...draft, birthdate })}
+              onChangeText={updateBirthdate}
             />
 
             <Text style={styles.heading}>Gender</Text>
@@ -195,7 +235,34 @@ export default function App() {
               ))}
             </View>
 
-            <TextInput style={styles.input} placeholder="University" value={draft.university} onChangeText={(university) => setDraft({ ...draft, university })} />
+            <View style={styles.section}>
+              <Text style={styles.heading}>University / school</Text>
+              <Pressable style={styles.select} onPress={() => setShowInstitutions(!showInstitutions)}>
+                <Text style={styles.selectText}>{draft.university || "Choose an institution"}</Text>
+                <Text style={styles.selectArrow}>{showInstitutions ? "Close" : "Choose"}</Text>
+              </Pressable>
+              {showInstitutions && (
+                <View style={styles.optionPanel}>
+                  {institutionGroups.map((group) => (
+                    <View key={group.title} style={styles.optionGroup}>
+                      <Text style={styles.optionGroupTitle}>{group.title}</Text>
+                      {group.options.map((option) => (
+                        <Pressable
+                          key={option}
+                          style={[styles.optionRow, draft.university === option && styles.optionRowSelected]}
+                          onPress={() => {
+                            setDraft({ ...draft, university: option });
+                            setShowInstitutions(false);
+                          }}
+                        >
+                          <Text style={[styles.optionText, draft.university === option && styles.optionTextSelected]}>{option}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
             <TextInput style={styles.input} placeholder="Faculty / degree" value={draft.degree} onChangeText={(degree) => setDraft({ ...draft, degree })} />
             <TextInput style={[styles.input, styles.bio]} placeholder="Bio" multiline value={draft.bio} onChangeText={(bio) => setDraft({ ...draft, bio })} />
 
@@ -264,6 +331,16 @@ const styles = StyleSheet.create({
   heading: { fontSize: 16, fontWeight: "500" },
   caption: { color: theme.muted, fontSize: 13, lineHeight: 18 },
   input: { backgroundColor: theme.surface, borderRadius: theme.radius, paddingHorizontal: 12, paddingVertical: 12, fontSize: 16 },
+  select: { backgroundColor: theme.surface, borderRadius: theme.radius, paddingHorizontal: 12, paddingVertical: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  selectText: { flex: 1, fontSize: 16, color: theme.text },
+  selectArrow: { fontSize: 13, fontWeight: "500", color: theme.accent },
+  optionPanel: { borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: theme.radius, overflow: "hidden" },
+  optionGroup: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.separator },
+  optionGroupTitle: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 6, fontSize: 12, fontWeight: "500", color: theme.muted },
+  optionRow: { paddingHorizontal: 12, paddingVertical: 10, backgroundColor: "#fff" },
+  optionRowSelected: { backgroundColor: theme.tagBg },
+  optionText: { fontSize: 14, color: theme.text },
+  optionTextSelected: { color: theme.tagText, fontWeight: "500" },
   bio: { minHeight: 90, textAlignVertical: "top" },
   cta: { height: 48, borderRadius: theme.radius, backgroundColor: theme.text, alignItems: "center", justifyContent: "center" },
   ctaText: { color: "#fff", fontSize: 14, fontWeight: "500" },
