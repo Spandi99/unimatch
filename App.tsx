@@ -16,7 +16,14 @@ import {
 } from "react-native";
 
 import { theme } from "./src/components/Theme";
-import { createVerificationRequest, saveProfile, signInWithEmail, signUpWithEmail } from "./src/lib/profileApi";
+import {
+  VerificationReview,
+  createVerificationRequest,
+  getLatestVerificationReview,
+  saveProfile,
+  signInWithEmail,
+  signUpWithEmail,
+} from "./src/lib/profileApi";
 import { supabase } from "./src/lib/supabase";
 import { GenderIdentity, ProfileDraft } from "./src/lib/types";
 
@@ -71,8 +78,11 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRefreshingReview, setIsRefreshingReview] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
   const [profileMessage, setProfileMessage] = useState("");
+  const [reviewMessage, setReviewMessage] = useState("");
+  const [review, setReview] = useState<VerificationReview | null>(null);
   const [showInstitutions, setShowInstitutions] = useState(false);
   const [draft, setDraft] = useState<ProfileDraft>({
     name: "",
@@ -174,6 +184,7 @@ export default function App() {
       const verification = await createVerificationRequest(data.user.id, draft.legiUri);
       if (verification.error) throw verification.error;
 
+      await refreshReview(data.user.id);
       setStep("app");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -188,6 +199,30 @@ export default function App() {
     const digits = value.replace(/\D/g, "").slice(0, 8);
     const parts = [digits.slice(0, 4), digits.slice(4, 6), digits.slice(6, 8)].filter(Boolean);
     setDraft({ ...draft, birthdate: parts.join("-") });
+  }
+
+  async function refreshReview(userId?: string) {
+    setReviewMessage("");
+    setIsRefreshingReview(true);
+    try {
+      let currentUserId = userId;
+      if (!currentUserId) {
+        const { data } = await supabase.auth.getUser();
+        currentUserId = data.user?.id;
+      }
+
+      if (!currentUserId) throw new Error("You are not signed in.");
+
+      const latestReview = await getLatestVerificationReview(currentUserId);
+      setReview(latestReview);
+      if (!latestReview) setReviewMessage("No Legi review request found yet.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown review error";
+      setReviewMessage(message);
+      Alert.alert("Could not refresh review", message);
+    } finally {
+      setIsRefreshingReview(false);
+    }
   }
 
   return (
@@ -325,13 +360,28 @@ export default function App() {
 
         {step === "app" && (
           <ScrollView contentContainerStyle={styles.screen}>
-            <Text style={styles.navTitle}>Review pending</Text>
+            <Text style={styles.navTitle}>{review?.status === "verified" ? "Review verified" : review?.status === "rejected" ? "Review rejected" : "Review pending"}</Text>
             <View style={styles.notice}>
               <Text style={styles.heading}>Profile submitted</Text>
               <Text style={styles.caption}>
-                Your Legi is waiting for a short review. Once the visible criteria are confirmed, your account can be provisionally enabled.
+                Your Legi has been uploaded. The visible criteria are checked by a reviewer; this app now shows the saved review status from Supabase.
               </Text>
             </View>
+            <View style={styles.reviewCard}>
+              <Text style={styles.heading}>Review status</Text>
+              <Text style={styles.statusText}>{review?.status ?? "pending"}</Text>
+              <ReviewRow label="Face photo visible" value={review?.checks?.has_face_photo} />
+              <ReviewRow label="Birthdate visible" value={review?.checks?.has_birthdate} />
+              <ReviewRow label="First and last name visible" value={review?.checks?.has_first_and_last_name} />
+              <ReviewRow label="Faculty visible" value={review?.checks?.has_faculty} />
+              <ReviewRow label="Student number format valid" value={review?.checks?.has_student_number} />
+              {review?.checks?.student_number ? <Text style={styles.caption}>Student number: {review.checks.student_number}</Text> : null}
+              {review?.checks?.reviewer_notes ? <Text style={styles.caption}>Notes: {review.checks.reviewer_notes}</Text> : null}
+            </View>
+            {reviewMessage ? <Text style={styles.errorText}>{reviewMessage}</Text> : null}
+            <Pressable style={[styles.outline, isRefreshingReview && styles.disabled]} disabled={isRefreshingReview} onPress={() => refreshReview()}>
+              <Text style={styles.outlineText}>{isRefreshingReview ? "Refreshing..." : "Refresh status"}</Text>
+            </Pressable>
             <Pressable style={styles.outline} onPress={() => setStep("onboarding")}>
               <Text style={styles.outlineText}>Edit submission</Text>
             </Pressable>
@@ -347,6 +397,16 @@ function Chip(props: { selected: boolean; label: string; onPress: () => void }) 
     <Pressable style={[styles.chip, props.selected && styles.chipSelected]} onPress={props.onPress}>
       <Text style={[styles.chipText, props.selected && styles.chipTextSelected]}>{props.selected ? `Selected ${props.label}` : props.label}</Text>
     </Pressable>
+  );
+}
+
+function ReviewRow(props: { label: string; value: boolean | null | undefined }) {
+  const marker = props.value === true ? "Passed" : props.value === false ? "Missing" : "Waiting";
+  return (
+    <View style={styles.reviewRow}>
+      <Text style={styles.reviewLabel}>{props.label}</Text>
+      <Text style={[styles.reviewValue, props.value === true && styles.reviewPassed, props.value === false && styles.reviewFailed]}>{marker}</Text>
+    </View>
   );
 }
 
@@ -390,4 +450,11 @@ const styles = StyleSheet.create({
   chipText: { color: theme.muted, fontSize: 14, fontWeight: "500" },
   chipTextSelected: { color: theme.tagText },
   notice: { backgroundColor: theme.tagBg, borderRadius: theme.radius, padding: 14, gap: 8 },
+  reviewCard: { borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: theme.radius, padding: 14, gap: 10 },
+  statusText: { alignSelf: "flex-start", backgroundColor: theme.tagBg, color: theme.tagText, borderRadius: 999, overflow: "hidden", paddingHorizontal: 10, paddingVertical: 5, fontSize: 13, fontWeight: "600" },
+  reviewRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  reviewLabel: { flex: 1, color: theme.text, fontSize: 14 },
+  reviewValue: { color: theme.muted, fontSize: 13, fontWeight: "600" },
+  reviewPassed: { color: "#067647" },
+  reviewFailed: { color: "#b42318" },
 });

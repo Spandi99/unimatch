@@ -5,6 +5,27 @@ import { Platform } from "react-native";
 import { supabase } from "./supabase";
 import { ProfileDraft } from "./types";
 
+export type VerificationStatus = "pending" | "verified" | "rejected";
+
+export type LegiReviewChecks = {
+  has_face_photo: boolean | null;
+  has_birthdate: boolean | null;
+  has_first_and_last_name: boolean | null;
+  has_faculty: boolean | null;
+  has_student_number: boolean | null;
+  student_number: string | null;
+  reviewer_notes: string | null;
+  reviewed_at: string | null;
+};
+
+export type VerificationReview = {
+  id: string;
+  status: VerificationStatus;
+  created_at: string;
+  reviewed_at: string | null;
+  checks: LegiReviewChecks | null;
+};
+
 export async function signInWithEmail(email: string, password: string) {
   return supabase.auth.signInWithPassword({ email, password });
 }
@@ -49,10 +70,39 @@ export async function createVerificationRequest(userId: string, legiUri: string)
     method: "legi_card",
     status: "pending",
     legi_document_path: legiDocumentPath,
-  });
+  }).select("id, status, created_at, reviewed_at").single();
 
   if (result.error) throw new Error(`Legi review request failed: ${result.error.message}`);
   return result;
+}
+
+export async function getLatestVerificationReview(userId: string): Promise<VerificationReview | null> {
+  const request = await supabase
+    .from("verification_requests")
+    .select("id, status, created_at, reviewed_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (request.error) throw new Error(`review status failed: ${request.error.message}`);
+  if (!request.data) return null;
+
+  const checks = await supabase
+    .from("legi_review_checks")
+    .select("has_face_photo, has_birthdate, has_first_and_last_name, has_faculty, has_student_number, student_number, reviewer_notes, reviewed_at")
+    .eq("verification_request_id", request.data.id)
+    .maybeSingle();
+
+  if (checks.error) throw new Error(`review checks failed: ${checks.error.message}`);
+
+  return {
+    id: request.data.id,
+    status: request.data.status as VerificationStatus,
+    created_at: request.data.created_at,
+    reviewed_at: request.data.reviewed_at,
+    checks: checks.data,
+  };
 }
 
 export async function sendMessageRequest(recipientId: string, note: string) {
