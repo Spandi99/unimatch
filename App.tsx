@@ -712,12 +712,7 @@ export default function App() {
         )}
         {!isBooting && step === "auth" && (
           <ScrollView contentContainerStyle={styles.centerScreen}>
-            <View style={styles.brandRow}>
-              <View style={styles.brandIcon}>
-                <Text style={styles.brandIconText}>U</Text>
-              </View>
-              <Text style={styles.brand}>UniMatch</Text>
-            </View>
+            <AuthHero compact={Boolean(pendingConfirmationEmail)} />
 
             <View style={styles.section}>
               <Text style={styles.title}>{pendingConfirmationEmail ? "Confirm your email" : "Create your account"}</Text>
@@ -1065,11 +1060,11 @@ export default function App() {
                         <>
                           <DiscoverCard profile={demoProfiles[currentDiscoverIndex]} remaining={discoverQueue.length} pulse={pulse} hotspot={selectedHotspot} />
                           <View style={styles.discoverActions}>
-                            <Pressable style={styles.passButton} onPress={() => passDiscoverProfile(currentDiscoverIndex)}>
-                              <Text style={styles.passButtonText}>Pass</Text>
+                            <Pressable style={styles.actionCircle} onPress={() => passDiscoverProfile(currentDiscoverIndex)}>
+                              <Text style={styles.actionX}>X</Text>
                             </Pressable>
-                            <Pressable style={styles.requestButtonLarge} onPress={() => openRequestForProfile(currentDiscoverIndex)}>
-                              <Text style={styles.requestButtonLargeText}>Request</Text>
+                            <Pressable style={[styles.actionCircle, styles.actionCirclePrimary]} onPress={() => openRequestForProfile(currentDiscoverIndex)}>
+                              <MessageIcon />
                             </Pressable>
                           </View>
                         </>
@@ -1163,6 +1158,7 @@ export default function App() {
                 <View style={styles.tabs}>
                   {appTabs.map((tab, index) => (
                     <Pressable key={tab} style={[styles.tabButton, appTab === index && styles.tabButtonActive]} onPress={() => setAppTab(index)}>
+                      <TabIcon index={index} active={appTab === index} />
                       <Text style={[styles.tabText, appTab === index && styles.tabTextActive]}>{tab}</Text>
                     </Pressable>
                   ))}
@@ -1190,6 +1186,105 @@ function ReviewRow(props: { label: string; value: boolean | null | undefined }) 
     <View style={styles.reviewRow}>
       <Text style={styles.reviewLabel}>{props.label}</Text>
       <Text style={[styles.reviewValue, props.value === true && styles.reviewPassed, props.value === false && styles.reviewFailed]}>{marker}</Text>
+    </View>
+  );
+}
+
+function AuthHero(props: { compact: boolean }) {
+  return (
+    <View style={[styles.authHero, props.compact && styles.authHeroCompact]}>
+      <View style={styles.brandRow}>
+        <View style={styles.brandIcon}>
+          <Text style={styles.brandIconText}>U</Text>
+        </View>
+        <Text style={styles.brand}>UniMatch</Text>
+      </View>
+      {!props.compact ? (
+        <>
+          <View style={styles.heroCopy}>
+            <Text style={styles.heroLine}>Dein Campus.</Text>
+            <Text style={styles.heroLine}>Dein Umfeld.</Text>
+            <Text style={styles.heroAccent}>Dein Match?</Text>
+          </View>
+          <BernScene />
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+function BernScene() {
+  return (
+    <View style={styles.bernScene}>
+      <View style={styles.mountainBack} />
+      <View style={styles.mountainFront} />
+      <View style={styles.skyline}>
+        <View style={styles.tower}>
+          <View style={styles.towerTop} />
+        </View>
+        <View style={styles.buildingTall} />
+        <View style={styles.buildingWide} />
+        <View style={styles.buildingSmall} />
+      </View>
+      <View style={styles.riverLine} />
+      <View style={styles.peoplePair}>
+        <View style={styles.person} />
+        <View style={[styles.person, styles.personRight]} />
+      </View>
+      <View style={styles.floatingHeart}>
+        <Text style={styles.floatingHeartText}>♡</Text>
+      </View>
+    </View>
+  );
+}
+
+function TabIcon(props: { index: number; active: boolean }) {
+  const colorStyle = props.active ? styles.tabIconActive : styles.tabIconMuted;
+  if (props.index === 0) {
+    return (
+      <View style={styles.pinIcon}>
+        <View style={[styles.pinDot, colorStyle]} />
+        <View style={[styles.pinStem, colorStyle]} />
+      </View>
+    );
+  }
+  if (props.index === 1) {
+    return (
+      <View style={styles.buildingIcon}>
+        <View style={[styles.buildingIconBlock, colorStyle]} />
+        <View style={[styles.buildingIconLine, colorStyle]} />
+      </View>
+    );
+  }
+  if (props.index === 2) {
+    return (
+      <View style={styles.discoverIcon}>
+        <View style={[styles.discoverIconCircle, colorStyle]} />
+        <View style={[styles.discoverIconSpark, colorStyle]} />
+      </View>
+    );
+  }
+  if (props.index === 3) {
+    return (
+      <View style={styles.heartIcon}>
+        <Text style={[styles.heartIconText, props.active && styles.heartIconTextActive]}>♡</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={styles.profileIcon}>
+      <View style={[styles.profileIconHead, colorStyle]} />
+      <View style={[styles.profileIconBody, colorStyle]} />
+    </View>
+  );
+}
+
+function MessageIcon() {
+  return (
+    <View style={styles.messageIcon}>
+      <View style={styles.messageDot} />
+      <View style={styles.messageDot} />
+      <View style={styles.messageDot} />
     </View>
   );
 }
@@ -1475,6 +1570,26 @@ const styles = StyleSheet.create({
   brandIcon: { width: 32, height: 32, borderRadius: 12, backgroundColor: theme.accent, alignItems: "center", justifyContent: "center" },
   brandIconText: { color: "#fff", fontWeight: "800" },
   brand: { fontSize: 23, fontWeight: "700", color: theme.text },
+  authHero: { gap: 18, alignItems: "stretch" },
+  authHeroCompact: { gap: 0 },
+  heroCopy: { gap: 2, marginTop: 4 },
+  heroLine: { color: theme.text, fontSize: 28, fontWeight: "800", lineHeight: 32 },
+  heroAccent: { color: theme.accent, fontSize: 28, fontWeight: "800", lineHeight: 32 },
+  bernScene: { height: 176, borderRadius: 28, backgroundColor: "#fbf8ff", overflow: "hidden", borderWidth: StyleSheet.hairlineWidth, borderColor: "#efe8ff", marginTop: 4 },
+  mountainBack: { position: "absolute", left: -12, right: 80, bottom: 58, height: 84, backgroundColor: "#efeaff", transform: [{ rotate: "-8deg" }], borderRadius: 24 },
+  mountainFront: { position: "absolute", left: 70, right: -30, bottom: 44, height: 96, backgroundColor: "#f6f2ff", transform: [{ rotate: "8deg" }], borderRadius: 24 },
+  skyline: { position: "absolute", left: 28, right: 22, bottom: 46, height: 80, flexDirection: "row", alignItems: "flex-end", gap: 8 },
+  tower: { width: 28, height: 70, borderRadius: 6, backgroundColor: "#fff", borderWidth: StyleSheet.hairlineWidth, borderColor: "#d9cdfa", alignItems: "center" },
+  towerTop: { width: 16, height: 16, borderRadius: 8, marginTop: 8, backgroundColor: "#d9cdfa" },
+  buildingTall: { width: 42, height: 48, borderRadius: 10, backgroundColor: "#fff", borderWidth: StyleSheet.hairlineWidth, borderColor: "#d9cdfa" },
+  buildingWide: { flex: 1, height: 38, borderRadius: 10, backgroundColor: "#fff", borderWidth: StyleSheet.hairlineWidth, borderColor: "#d9cdfa" },
+  buildingSmall: { width: 36, height: 30, borderRadius: 10, backgroundColor: "#fff", borderWidth: StyleSheet.hairlineWidth, borderColor: "#d9cdfa" },
+  riverLine: { position: "absolute", left: 0, right: 0, bottom: 38, height: 10, backgroundColor: "rgba(155,124,246,0.16)" },
+  peoplePair: { position: "absolute", left: 104, bottom: 18, flexDirection: "row", gap: 26 },
+  person: { width: 22, height: 38, borderRadius: 11, backgroundColor: "#8d8992" },
+  personRight: { backgroundColor: "#413f46" },
+  floatingHeart: { position: "absolute", right: 34, top: 30, width: 34, height: 34, borderRadius: 17, backgroundColor: theme.accent, alignItems: "center", justifyContent: "center", shadowColor: theme.accent, shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
+  floatingHeartText: { color: "#fff", fontSize: 20, fontWeight: "900" },
   section: { gap: 10 },
   navTitle: { textAlign: "center", fontSize: 15, fontWeight: "700", color: theme.text, marginBottom: 2 },
   title: { fontSize: 20, fontWeight: "700", color: theme.text, textAlign: "center" },
@@ -1566,11 +1681,28 @@ const styles = StyleSheet.create({
   backText: { color: theme.text, fontSize: 13, fontWeight: "700" },
   successBanner: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, backgroundColor: "#ecfdf3", borderRadius: 18, padding: 14 },
   dismissText: { color: "#067647", fontWeight: "700", fontSize: 13 },
-  tabs: { position: "absolute", left: 12, right: 12, bottom: 12, height: 64, borderRadius: 24, backgroundColor: "rgba(255,255,255,0.96)", flexDirection: "row", alignItems: "center", justifyContent: "space-around", paddingHorizontal: 6, shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 5 },
-  tabButton: { flex: 1, height: 48, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  tabs: { position: "absolute", left: 12, right: 12, bottom: 12, height: 68, borderRadius: 24, backgroundColor: "rgba(255,255,255,0.97)", flexDirection: "row", alignItems: "center", justifyContent: "space-around", paddingHorizontal: 6, shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 5 },
+  tabButton: { flex: 1, height: 54, borderRadius: 18, alignItems: "center", justifyContent: "center", gap: 3 },
   tabButtonActive: { backgroundColor: theme.surface },
-  tabText: { color: theme.muted, fontSize: 12, fontWeight: "700" },
+  tabText: { color: theme.muted, fontSize: 10, fontWeight: "700" },
   tabTextActive: { color: theme.text },
+  tabIconActive: { backgroundColor: theme.accent },
+  tabIconMuted: { backgroundColor: "#8f8a98" },
+  pinIcon: { width: 22, height: 20, alignItems: "center", justifyContent: "center" },
+  pinDot: { width: 12, height: 12, borderRadius: 6 },
+  pinStem: { width: 4, height: 9, borderRadius: 2, marginTop: -2 },
+  buildingIcon: { width: 22, height: 20, alignItems: "center", justifyContent: "flex-end", gap: 2 },
+  buildingIconBlock: { width: 17, height: 14, borderRadius: 3 },
+  buildingIconLine: { width: 22, height: 3, borderRadius: 2 },
+  discoverIcon: { width: 22, height: 20, alignItems: "center", justifyContent: "center" },
+  discoverIconCircle: { width: 15, height: 15, borderRadius: 8 },
+  discoverIconSpark: { position: "absolute", right: 1, top: 1, width: 7, height: 7, borderRadius: 4 },
+  heartIcon: { width: 22, height: 20, alignItems: "center", justifyContent: "center" },
+  heartIconText: { color: "#8f8a98", fontSize: 21, fontWeight: "900", lineHeight: 22 },
+  heartIconTextActive: { color: theme.accent },
+  profileIcon: { width: 22, height: 20, alignItems: "center", justifyContent: "center" },
+  profileIconHead: { width: 8, height: 8, borderRadius: 4 },
+  profileIconBody: { width: 18, height: 8, borderRadius: 8, marginTop: 2 },
   chevron: { color: theme.muted, fontSize: 20, fontWeight: "700" },
   metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
   metaPill: { alignSelf: "flex-start", backgroundColor: theme.surface, color: theme.text, borderRadius: 999, overflow: "hidden", paddingHorizontal: 10, paddingVertical: 5, fontSize: 12, fontWeight: "700" },
@@ -1591,7 +1723,12 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: "row", gap: 10 },
   outlineSmall: { flex: 1, height: 44, borderRadius: 16, backgroundColor: theme.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, alignItems: "center", justifyContent: "center" },
   ctaSmall: { flex: 1, height: 44, borderRadius: 16, backgroundColor: theme.accent, alignItems: "center", justifyContent: "center" },
-  discoverActions: { flexDirection: "row", gap: 12 },
+  discoverActions: { flexDirection: "row", justifyContent: "center", gap: 18 },
+  actionCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: theme.elevated, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 3 },
+  actionCirclePrimary: { backgroundColor: theme.accent },
+  actionX: { color: "#8f8a98", fontSize: 25, fontWeight: "800" },
+  messageIcon: { width: 28, height: 22, borderRadius: 12, backgroundColor: "#fff", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 3 },
+  messageDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: theme.accent },
   passButton: { flex: 1, height: 54, borderRadius: 999, backgroundColor: theme.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, alignItems: "center", justifyContent: "center" },
   passButtonText: { color: theme.muted, fontSize: 15, fontWeight: "700" },
   requestButtonLarge: { flex: 1.25, height: 54, borderRadius: 999, backgroundColor: theme.accent, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 2 },
