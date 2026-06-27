@@ -62,6 +62,12 @@ const demoProfiles = [
   { initials: "NF", name: "Nina", age: 22, uni: "BFH", degree: "Design", distance: "~200m", place: "Bern main library", bio: "Illustration, yoga, and collecting too many houseplants.", photo: profileImages[1] },
   { initials: "MR", name: "Marco", age: 26, uni: "University of Bern", degree: "Architecture", distance: "~350m", place: "Muesmatt campus", bio: "Photography, cycling, strong opinions about fonts.", photo: profileImages[2] },
   { initials: "LB", name: "Lena", age: 23, uni: "PHBern", degree: "Education", distance: "~470m", place: "PHBern cafe", bio: "Reading too much, hiking when not reading.", photo: profileImages[3] },
+  { initials: "AM", name: "Amira", age: 25, uni: "University of Bern", degree: "Law", distance: "~520m", place: "Mittelstrasse campus", bio: "Mock trials, late espresso, and weekend trains to the mountains.", photo: profileImages[0] },
+  { initials: "JO", name: "Jonas", age: 23, uni: "BFH", degree: "Computer Science", distance: "~610m", place: "Marzili study rooms", bio: "Climbing, indie games, and always looking for the quietest table.", photo: profileImages[2] },
+  { initials: "EA", name: "Elena", age: 21, uni: "PHBern", degree: "Education", distance: "~760m", place: "PHBern library", bio: "Children's books, bouldering, and making very specific playlists.", photo: profileImages[1] },
+  { initials: "TM", name: "Tim", age: 26, uni: "University of Bern", degree: "Economics", distance: "~840m", place: "VonRoll cafe", bio: "Good spreadsheets, better dumplings, and Sunday basketball.", photo: profileImages[3] },
+  { initials: "YA", name: "Yara", age: 24, uni: "BFH", degree: "Social Work", distance: "~950m", place: "Bern main library", bio: "Volunteering, live music, and debating where the best falafel is.", photo: profileImages[0] },
+  { initials: "LU", name: "Luc", age: 22, uni: "University of Bern", degree: "Psychology", distance: "~1.1km", place: "Unitobler courtyard", bio: "Podcasts, tennis, and overthinking cafe seating arrangements.", photo: profileImages[2] },
 ];
 const appTabs = ["Nearby", "Discover", "Matches", "Profile"];
 const rememberMeKey = "unimatch.rememberMe";
@@ -121,6 +127,7 @@ export default function App() {
   const [showInstitutions, setShowInstitutions] = useState(false);
   const [appTab, setAppTab] = useState(0);
   const [showVerifiedBanner, setShowVerifiedBanner] = useState(false);
+  const [isNearbyVisible, setIsNearbyVisible] = useState(true);
   const [selectedProfile, setSelectedProfile] = useState<number | null>(null);
   const [requestProfile, setRequestProfile] = useState<number | null>(null);
   const [requestDraft, setRequestDraft] = useState("");
@@ -993,24 +1000,30 @@ export default function App() {
                           <Text style={styles.titleLeft}>Nearby now</Text>
                           <Text style={styles.caption}>People at active campus hotspots.</Text>
                         </View>
-                        <View style={styles.livePill}>
-                          <Text style={styles.livePillText}>Visible</Text>
-                        </View>
+                        <VisibilityToggle visible={isNearbyVisible} onPress={() => setIsNearbyVisible((value) => !value)} />
                       </View>
-                      {demoProfiles.map((profile, index) => (
-                        <Pressable key={profile.name} style={styles.profileRow} onPress={() => setSelectedProfile(index)}>
-                          <ProfilePhoto profile={profile} style={styles.avatar} imageStyle={styles.avatarImage} />
-                          <View style={styles.profileCopy}>
-                            <Text style={styles.profileName}>{profile.name}, {profile.age}</Text>
-                            <Text style={styles.caption}>{profile.place}</Text>
-                            <View style={styles.metaRow}>
-                              <Text style={styles.metaPill}>{profile.distance}</Text>
-                              <Text style={styles.metaPill}>{profile.degree}</Text>
+                      {!isNearbyVisible ? (
+                        <View style={styles.invisibleState}>
+                          <VisibilityIcon visible={false} />
+                          <Text style={styles.title}>You are invisible</Text>
+                          <Text style={styles.caption}>Turn visibility back on to see nearby students and appear at this hotspot.</Text>
+                        </View>
+                      ) : (
+                        demoProfiles.map((profile, index) => (
+                          <Pressable key={profile.name} style={styles.profileRow} onPress={() => setSelectedProfile(index)}>
+                            <ProfilePhoto profile={profile} style={styles.avatar} imageStyle={styles.avatarImage} />
+                            <View style={styles.profileCopy}>
+                              <Text style={styles.profileName}>{profile.name}, {profile.age}</Text>
+                              <Text style={styles.caption}>{profile.place}</Text>
+                              <View style={styles.metaRow}>
+                                <Text style={styles.metaPill}>{profile.distance}</Text>
+                                <Text style={styles.metaPill}>{profile.degree}</Text>
+                              </View>
                             </View>
-                          </View>
-                          <Text style={styles.chevron}>&gt;</Text>
-                        </Pressable>
-                      ))}
+                            <Text style={styles.chevron}>&gt;</Text>
+                          </Pressable>
+                        ))
+                      )}
                     </>
                   )}
                   {appTab === 1 && (
@@ -1146,6 +1159,31 @@ function ReviewRow(props: { label: string; value: boolean | null | undefined }) 
     <View style={styles.reviewRow}>
       <Text style={styles.reviewLabel}>{props.label}</Text>
       <Text style={[styles.reviewValue, props.value === true && styles.reviewPassed, props.value === false && styles.reviewFailed]}>{marker}</Text>
+    </View>
+  );
+}
+
+function VisibilityToggle(props: { visible: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={props.visible ? "Switch to invisible" : "Switch to visible"}
+      style={[styles.visibilityToggle, !props.visible && styles.visibilityToggleOff]}
+      onPress={props.onPress}
+    >
+      <VisibilityIcon visible={props.visible} />
+      <Text style={[styles.visibilityText, !props.visible && styles.visibilityTextOff]}>
+        {props.visible ? "Visible" : "Invisible"}
+      </Text>
+    </Pressable>
+  );
+}
+
+function VisibilityIcon(props: { visible: boolean }) {
+  return (
+    <View style={[styles.eyeIcon, !props.visible && styles.eyeIconOff]}>
+      <View style={[styles.eyePupil, !props.visible && styles.eyePupilOff]} />
+      {!props.visible ? <View style={styles.eyeSlash} /> : null}
     </View>
   );
 }
@@ -1402,6 +1440,16 @@ const styles = StyleSheet.create({
   homeHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 2 },
   livePill: { backgroundColor: "#ecfdf3", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   livePillText: { color: "#067647", fontSize: 12, fontWeight: "700" },
+  visibilityToggle: { flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "#e9f7f1", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 },
+  visibilityToggleOff: { backgroundColor: "#eeeeee" },
+  visibilityText: { color: theme.distanceText, fontSize: 12, fontWeight: "800" },
+  visibilityTextOff: { color: "#777777" },
+  eyeIcon: { width: 23, height: 15, borderWidth: 1.8, borderColor: theme.distanceText, borderRadius: 999, alignItems: "center", justifyContent: "center" },
+  eyeIconOff: { borderColor: "#777777" },
+  eyePupil: { width: 6, height: 6, borderRadius: 3, backgroundColor: theme.distanceText },
+  eyePupilOff: { backgroundColor: "#777777" },
+  eyeSlash: { position: "absolute", width: 30, height: 2, borderRadius: 999, backgroundColor: "#777777", transform: [{ rotate: "-32deg" }] },
+  invisibleState: { minHeight: 320, backgroundColor: theme.elevated, borderRadius: 24, padding: 24, alignItems: "center", justifyContent: "center", gap: 14, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 14, shadowOffset: { width: 0, height: 7 }, elevation: 1 },
   profileRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: theme.elevated, borderRadius: 18, padding: 13, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 1 },
   avatar: { width: 58, height: 58, borderRadius: 20, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   smallAvatar: { width: 42, height: 42, borderRadius: 15, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center", overflow: "hidden" },
