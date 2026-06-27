@@ -39,6 +39,26 @@ npm run start
 
 Use Expo Go or a development build to run it on iPhone and Android.
 
+## Email confirmation
+
+Supabase Auth must be allowed to redirect back into the app after a user clicks the confirmation email.
+
+In Supabase, open `Authentication` -> `URL Configuration` and set:
+
+- Site URL: `http://localhost:8081`
+- Redirect URLs:
+  - `http://localhost:8081/auth/callback`
+  - `http://YOUR_PC_LAN_IP:8081/auth/callback`
+  - `unimatch://auth/callback`
+
+For iPhone testing with Expo Go, set this in `.env` before starting the app:
+
+```powershell
+EXPO_PUBLIC_AUTH_REDIRECT_URL=http://YOUR_PC_LAN_IP:8081/auth/callback
+```
+
+Replace `YOUR_PC_LAN_IP` with the LAN address shown by Expo, for example `192.168.1.42`. When the email opens this page, UniMatch confirms the Supabase code or shows a clear message to return to the app and sign in.
+
 ## Expo SDK
 
 This project targets Expo SDK 54 for compatibility with the current Expo Go app.

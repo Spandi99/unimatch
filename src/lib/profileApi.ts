@@ -35,8 +35,12 @@ export async function signInWithEmail(email: string, password: string) {
   return supabase.auth.signInWithPassword({ email, password });
 }
 
-export async function signUpWithEmail(email: string, password: string) {
-  return supabase.auth.signUp({ email, password });
+export async function signUpWithEmail(email: string, password: string, emailRedirectTo?: string) {
+  return supabase.auth.signUp({
+    email,
+    password,
+    options: emailRedirectTo ? { emailRedirectTo } : undefined,
+  });
 }
 
 export async function sendMagicLink(email: string) {

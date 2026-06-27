@@ -6,6 +6,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   SafeAreaView,
@@ -17,6 +18,7 @@ import {
 } from "react-native";
 
 import { theme } from "./src/components/Theme";
+import { getAuthRedirectUrl, isAuthCallbackUrl } from "./src/lib/authRedirect";
 import {
   VerificationReview,
   createVerificationRequest,
@@ -83,7 +85,7 @@ const institutionGroups = [
 ];
 
 export default function App() {
-  const [step, setStep] = useState<"auth" | "onboarding" | "review" | "home">("auth");
+  const [step, setStep] = useState<"auth" | "auth-callback" | "onboarding" | "review" | "home">("auth");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
@@ -92,6 +94,7 @@ export default function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRefreshingReview, setIsRefreshingReview] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
+  const [callbackMessage, setCallbackMessage] = useState("Confirming your email...");
   const [pendingConfirmationEmail, setPendingConfirmationEmail] = useState("");
   const [profileMessage, setProfileMessage] = useState("");
   const [reviewMessage, setReviewMessage] = useState("");
@@ -127,7 +130,26 @@ export default function App() {
   const canFinish = Boolean(draft.name.trim() && draft.birthdate && draft.photoUri && draft.legiUri);
 
   useEffect(() => {
+    function handleUrl(url: string | null) {
+      if (!url || !isAuthCallbackUrl(url)) return;
+      setStep("auth-callback");
+      completeEmailConfirmation(url);
+    }
+
     async function bootFromSession() {
+      const initialUrl = await Linking.getInitialURL();
+      if (initialUrl && isAuthCallbackUrl(initialUrl)) {
+        handleUrl(initialUrl);
+        setIsBooting(false);
+        return;
+      }
+
+      if (Platform.OS === "web" && typeof window !== "undefined" && isAuthCallbackUrl(window.location.href)) {
+        handleUrl(window.location.href);
+        setIsBooting(false);
+        return;
+      }
+
       const savedRememberMe = await AsyncStorage.getItem(rememberMeKey);
       if (savedRememberMe === "false") {
         setRememberMe(false);
@@ -141,6 +163,8 @@ export default function App() {
       }
       setIsBooting(false);
     }
+
+    const urlListener = Linking.addEventListener("url", (event) => handleUrl(event.url));
 
     bootFromSession().catch((error) => {
       console.warn(error);
@@ -158,9 +182,51 @@ export default function App() {
     });
 
     return () => {
+      urlListener.remove();
       authListener.subscription.unsubscribe();
     };
   }, []);
+
+  async function completeEmailConfirmation(url: string) {
+    setCallbackMessage("Confirming your email...");
+    try {
+      const parsedUrl = new URL(url.replace("#", "?"));
+      const code = parsedUrl.searchParams.get("code");
+      const accessToken = parsedUrl.searchParams.get("access_token");
+      const refreshToken = parsedUrl.searchParams.get("refresh_token");
+
+      if (code) {
+        const result = await supabase.auth.exchangeCodeForSession(code);
+        if (result.error) throw result.error;
+        if (result.data.session?.user) {
+          await AsyncStorage.setItem(rememberMeKey, rememberMe ? "true" : "false");
+          setCallbackMessage("Email confirmed. Taking you into UniMatch...");
+          await routeAfterAuthentication(result.data.session.user.id);
+          return;
+        }
+      }
+
+      if (accessToken && refreshToken) {
+        const result = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (result.error) throw result.error;
+        if (result.data.session?.user) {
+          await AsyncStorage.setItem(rememberMeKey, rememberMe ? "true" : "false");
+          setCallbackMessage("Email confirmed. Taking you into UniMatch...");
+          await routeAfterAuthentication(result.data.session.user.id);
+          return;
+        }
+      }
+
+      setCallbackMessage("Email confirmed. Go back to UniMatch and sign in with your email and password.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not confirm this email link.";
+      setCallbackMessage(message);
+      setAuthMessage(message);
+    }
+  }
 
   async function authenticate(mode: "sign-in" | "sign-up") {
     if (!email.trim() || !password) {
@@ -173,7 +239,7 @@ export default function App() {
     try {
       const result = mode === "sign-in"
         ? await signInWithEmail(email.trim(), password)
-        : await signUpWithEmail(email.trim(), password);
+        : await signUpWithEmail(email.trim(), password, getAuthRedirectUrl());
 
       if (result.error) {
         setAuthMessage(result.error.message);
@@ -427,6 +493,24 @@ export default function App() {
             </Pressable>
             {authMessage ? <Text style={styles.errorText}>{authMessage}</Text> : null}
           </ScrollView>
+        )}
+
+        {!isBooting && step === "auth-callback" && (
+          <View style={styles.centerScreen}>
+            <View style={styles.brandRow}>
+              <View style={styles.brandIcon}>
+                <Text style={styles.brandIconText}>U</Text>
+              </View>
+              <Text style={styles.brand}>UniMatch</Text>
+            </View>
+            <View style={styles.section}>
+              <Text style={styles.title}>Email confirmation</Text>
+              <Text style={styles.caption}>{callbackMessage}</Text>
+            </View>
+            <Pressable style={styles.cta} onPress={() => setStep("auth")}>
+              <Text style={styles.ctaText}>Back to sign in</Text>
+            </Pressable>
+          </View>
         )}
 
         {!isBooting && step === "onboarding" && (
