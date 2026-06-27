@@ -40,11 +40,13 @@ const genderOptions: Array<{ label: string; value: GenderIdentity }> = [
 ];
 
 const meetOptions = ["women", "men", "non_binary_people", "everyone"];
-const nearbyProfiles = [
-  { name: "Mira", place: "Unitobler library", detail: "Coffee break nearby" },
-  { name: "Noah", place: "Bern main library", detail: "Studying medicine" },
-  { name: "Lea", place: "BFH campus", detail: "Open to a walk after class" },
+const demoProfiles = [
+  { initials: "SK", name: "Sophie", age: 24, uni: "University of Bern", degree: "Medicine", distance: "~120m", place: "Unitobler library", bio: "Running, cooking, and cinema. Usually studying near the anatomy floor." },
+  { initials: "NF", name: "Nina", age: 22, uni: "BFH", degree: "Design", distance: "~200m", place: "Bern main library", bio: "Illustration, yoga, and collecting too many houseplants." },
+  { initials: "MR", name: "Marco", age: 26, uni: "University of Bern", degree: "Architecture", distance: "~350m", place: "Muesmatt campus", bio: "Photography, cycling, strong opinions about fonts." },
+  { initials: "LB", name: "Lena", age: 23, uni: "PHBern", degree: "Education", distance: "~470m", place: "PHBern cafe", bio: "Reading too much, hiking when not reading." },
 ];
+const appTabs = ["Nearby", "Discover", "Matches", "Profile"];
 const institutionGroups = [
   {
     title: "Universities in Bern",
@@ -91,6 +93,19 @@ export default function App() {
   const [submitStage, setSubmitStage] = useState("");
   const [review, setReview] = useState<VerificationReview | null>(null);
   const [showInstitutions, setShowInstitutions] = useState(false);
+  const [appTab, setAppTab] = useState(0);
+  const [showVerifiedBanner, setShowVerifiedBanner] = useState(false);
+  const [selectedProfile, setSelectedProfile] = useState<number | null>(null);
+  const [requestProfile, setRequestProfile] = useState<number | null>(null);
+  const [requestDraft, setRequestDraft] = useState("");
+  const [chatIndex, setChatIndex] = useState<number | null>(null);
+  const [incomingRequests, setIncomingRequests] = useState([
+    { profile: demoProfiles[3], note: "I think we were both in the library earlier. Coffee after lectures?", time: "8m" },
+    { profile: demoProfiles[0], note: "Your bio had me at mediocre pasta. Trade recipes?", time: "24m" },
+  ]);
+  const [matches, setMatches] = useState([
+    { profile: demoProfiles[1], messages: [{ text: "Hey! How was your exam?", mine: false }], time: "2m" },
+  ]);
   const [draft, setDraft] = useState<ProfileDraft>({
     name: "",
     birthdate: "",
@@ -132,7 +147,7 @@ export default function App() {
       }
 
       setProfileMessage("");
-      setStep("onboarding");
+      await routeAfterAuthentication(session.user.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown authentication error";
       setAuthMessage(message);
@@ -169,6 +184,44 @@ export default function App() {
     if (!result.canceled) setDraft((current) => ({ ...current, legiUri: result.assets[0].uri }));
   }
 
+  async function routeAfterAuthentication(userId: string) {
+    const profile = await supabase
+      .from("profiles")
+      .select("name, birthdate, gender, wants_to_meet, university, degree, bio, photo_path")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (profile.error) throw profile.error;
+
+    const profileData = profile.data;
+    if (profileData) {
+      setDraft((current) => ({
+        ...current,
+        name: profileData.name ?? "",
+        birthdate: profileData.birthdate ?? "",
+        gender: profileData.gender ?? current.gender,
+        wantsToMeet: profileData.wants_to_meet ?? current.wantsToMeet,
+        university: profileData.university ?? current.university,
+        degree: profileData.degree ?? "",
+        bio: profileData.bio ?? "",
+        photoUri: current.photoUri,
+      }));
+
+      const latestReview = await refreshReview(userId);
+      if (latestReview?.status === "verified") {
+        setShowVerifiedBanner(false);
+        setStep("home");
+        return;
+      }
+      if (latestReview) {
+        setStep("review");
+        return;
+      }
+    }
+
+    setStep("onboarding");
+  }
+
   async function finishProfile() {
     setProfileMessage("");
     setSubmitStage("Checking your session...");
@@ -202,6 +255,7 @@ export default function App() {
 
       setSubmitStage("Loading review result...");
       const latestReview = await refreshReview(data.user.id);
+      if (latestReview?.status === "verified") setShowVerifiedBanner(true);
       setStep(latestReview?.status === "verified" ? "home" : "review");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -415,42 +469,159 @@ export default function App() {
         )}
 
         {step === "home" && (
-          <ScrollView contentContainerStyle={styles.screen}>
-            <Text style={styles.navTitle}>UniMatch</Text>
-            <View style={styles.notice}>
-              <Text style={styles.heading}>Verified student profile</Text>
-              <Text style={styles.caption}>
-                Your account is active. Nearby mode will only show students who are at enabled hotspots and have chosen to be visible.
-              </Text>
-            </View>
-            <View style={styles.homeHeader}>
-              <View>
-                <Text style={styles.titleLeft}>Nearby now</Text>
-                <Text style={styles.caption}>Demo profiles until nearby sessions are connected.</Text>
-              </View>
-              <View style={styles.livePill}>
-                <Text style={styles.livePillText}>Visible</Text>
-              </View>
-            </View>
-            {nearbyProfiles.map((profile) => (
-              <View key={profile.name} style={styles.profileRow}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{profile.name[0]}</Text>
+          <View style={styles.flex}>
+            {chatIndex !== null ? (
+              <ChatScreen
+                match={matches[chatIndex]}
+                onBack={() => setChatIndex(null)}
+                onSend={(text) => {
+                  setMatches((current) => current.map((match, index) => index === chatIndex ? { ...match, messages: [...match.messages, { text, mine: true }] } : match));
+                }}
+              />
+            ) : requestProfile !== null ? (
+              <RequestComposer
+                profile={demoProfiles[requestProfile]}
+                draft={requestDraft}
+                onDraft={setRequestDraft}
+                onBack={() => setRequestProfile(null)}
+                onSend={() => {
+                  if (!requestDraft.trim()) {
+                    Alert.alert("Missing note", "Write a short request first.");
+                    return;
+                  }
+                  Alert.alert("Request sent", "The chat opens only if they accept.");
+                  setRequestProfile(null);
+                  setRequestDraft("");
+                  setAppTab(2);
+                }}
+              />
+            ) : selectedProfile !== null ? (
+              <ProfileDetail
+                profile={demoProfiles[selectedProfile]}
+                onBack={() => setSelectedProfile(null)}
+                onRequest={() => {
+                  setRequestProfile(selectedProfile);
+                  setRequestDraft("");
+                }}
+              />
+            ) : (
+              <>
+                <ScrollView contentContainerStyle={styles.screenWithTabs}>
+                  <Text style={styles.navTitle}>{appTabs[appTab]}</Text>
+                  {showVerifiedBanner && (
+                    <View style={styles.successBanner}>
+                      <View style={styles.profileCopy}>
+                        <Text style={styles.heading}>You are verified</Text>
+                        <Text style={styles.caption}>Your profile is active now.</Text>
+                      </View>
+                      <Pressable onPress={() => setShowVerifiedBanner(false)}>
+                        <Text style={styles.dismissText}>OK</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                  {appTab === 0 && (
+                    <>
+                      <View style={styles.homeHeader}>
+                        <View>
+                          <Text style={styles.titleLeft}>Nearby now</Text>
+                          <Text style={styles.caption}>Visible at enabled hotspots.</Text>
+                        </View>
+                        <View style={styles.livePill}>
+                          <Text style={styles.livePillText}>Visible</Text>
+                        </View>
+                      </View>
+                      {demoProfiles.map((profile, index) => (
+                        <Pressable key={profile.name} style={styles.profileRow} onPress={() => setSelectedProfile(index)}>
+                          <View style={styles.avatar}><Text style={styles.avatarText}>{profile.initials}</Text></View>
+                          <View style={styles.profileCopy}>
+                            <Text style={styles.profileName}>{profile.name}, {profile.age}</Text>
+                            <Text style={styles.caption}>{profile.place} · {profile.distance}</Text>
+                            <Text style={styles.caption}>{profile.degree}</Text>
+                          </View>
+                          <Text style={styles.chevron}>›</Text>
+                        </Pressable>
+                      ))}
+                    </>
+                  )}
+                  {appTab === 1 && (
+                    <>
+                      <View style={styles.discoverCard}>
+                        <View style={styles.bigAvatar}><Text style={styles.bigAvatarText}>{demoProfiles[2].initials}</Text></View>
+                        <Text style={styles.title}>{demoProfiles[2].name}, {demoProfiles[2].age}</Text>
+                        <Text style={styles.caption}>{demoProfiles[2].uni} · {demoProfiles[2].degree}</Text>
+                        <Text style={styles.caption}>{demoProfiles[2].bio}</Text>
+                      </View>
+                      <View style={styles.actionRow}>
+                        <Pressable style={styles.outlineSmall}><Text style={styles.outlineText}>Pass</Text></Pressable>
+                        <Pressable style={styles.ctaSmall}><Text style={styles.ctaText}>Request</Text></Pressable>
+                      </View>
+                    </>
+                  )}
+                  {appTab === 2 && (
+                    <>
+                      <Text style={styles.heading}>Message requests</Text>
+                      {incomingRequests.map((request, index) => (
+                        <View key={`${request.profile.name}-${request.time}`} style={styles.requestCard}>
+                          <Text style={styles.profileName}>{request.profile.name}</Text>
+                          <Text style={styles.caption}>{request.note}</Text>
+                          <View style={styles.actionRow}>
+                            <Pressable style={styles.outlineSmall} onPress={() => setIncomingRequests((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
+                              <Text style={styles.outlineText}>Decline</Text>
+                            </Pressable>
+                            <Pressable
+                              style={styles.ctaSmall}
+                              onPress={() => {
+                                setMatches((current) => [{ profile: request.profile, messages: [{ text: request.note, mine: false }], time: "now" }, ...current]);
+                                setIncomingRequests((current) => current.filter((_, itemIndex) => itemIndex !== index));
+                                setChatIndex(0);
+                              }}
+                            >
+                              <Text style={styles.ctaText}>Accept</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      ))}
+                      <Text style={styles.heading}>Chats</Text>
+                      {matches.map((match, index) => (
+                        <Pressable key={match.profile.name} style={styles.profileRow} onPress={() => setChatIndex(index)}>
+                          <View style={styles.avatar}><Text style={styles.avatarText}>{match.profile.initials}</Text></View>
+                          <View style={styles.profileCopy}>
+                            <Text style={styles.profileName}>{match.profile.name}</Text>
+                            <Text style={styles.caption}>{match.messages[match.messages.length - 1]?.text}</Text>
+                          </View>
+                          <Text style={styles.caption}>{match.time}</Text>
+                        </Pressable>
+                      ))}
+                    </>
+                  )}
+                  {appTab === 3 && (
+                    <>
+                      <View style={styles.profileHeader}>
+                        <View style={styles.bigAvatar}><Text style={styles.bigAvatarText}>{draft.name ? draft.name.slice(0, 2).toUpperCase() : "U"}</Text></View>
+                        <Text style={styles.title}>{draft.name || "Your profile"}</Text>
+                        <Text style={styles.caption}>{draft.university} · {draft.degree || "Student"}</Text>
+                      </View>
+                      <View style={styles.reviewCard}>
+                        <Text style={styles.heading}>About</Text>
+                        <Text style={styles.caption}>{draft.bio || "No bio yet."}</Text>
+                        <Text style={styles.caption}>Looking to meet: {draft.wantsToMeet.join(", ").replace(/_/g, " ")}</Text>
+                      </View>
+                      <Pressable style={styles.outline} onPress={() => setStep("onboarding")}>
+                        <Text style={styles.outlineText}>Edit profile</Text>
+                      </Pressable>
+                    </>
+                  )}
+                </ScrollView>
+                <View style={styles.tabs}>
+                  {appTabs.map((tab, index) => (
+                    <Pressable key={tab} style={styles.tabButton} onPress={() => setAppTab(index)}>
+                      <Text style={[styles.tabText, appTab === index && styles.tabTextActive]}>{tab}</Text>
+                    </Pressable>
+                  ))}
                 </View>
-                <View style={styles.profileCopy}>
-                  <Text style={styles.profileName}>{profile.name}</Text>
-                  <Text style={styles.caption}>{profile.place}</Text>
-                  <Text style={styles.caption}>{profile.detail}</Text>
-                </View>
-                <Pressable style={styles.requestButton}>
-                  <Text style={styles.requestButtonText}>Request</Text>
-                </Pressable>
-              </View>
-            ))}
-            <Pressable style={styles.outline} onPress={() => setStep("review")}>
-              <Text style={styles.outlineText}>View verification</Text>
-            </Pressable>
-          </ScrollView>
+              </>
+            )}
+          </View>
         )}
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -475,11 +646,84 @@ function ReviewRow(props: { label: string; value: boolean | null | undefined }) 
   );
 }
 
+function ProfileDetail(props: { profile: typeof demoProfiles[number]; onBack: () => void; onRequest: () => void }) {
+  return (
+    <ScrollView contentContainerStyle={styles.screen}>
+      <Text style={styles.navTitle} onPress={props.onBack}>‹ Nearby</Text>
+      <View style={styles.discoverCard}>
+        <View style={styles.bigAvatar}><Text style={styles.bigAvatarText}>{props.profile.initials}</Text></View>
+        <Text style={styles.title}>{props.profile.name}, {props.profile.age}</Text>
+        <Text style={styles.caption}>{props.profile.uni} · {props.profile.degree}</Text>
+        <Text style={styles.caption}>{props.profile.place} · {props.profile.distance}</Text>
+        <Text style={styles.caption}>{props.profile.bio}</Text>
+      </View>
+      <Pressable style={styles.cta} onPress={props.onRequest}>
+        <Text style={styles.ctaText}>Send message request</Text>
+      </Pressable>
+    </ScrollView>
+  );
+}
+
+function RequestComposer(props: { profile: typeof demoProfiles[number]; draft: string; onDraft: (value: string) => void; onBack: () => void; onSend: () => void }) {
+  return (
+    <ScrollView contentContainerStyle={styles.screen}>
+      <Text style={styles.navTitle} onPress={props.onBack}>‹ Profile</Text>
+      <View style={styles.profileHeader}>
+        <View style={styles.avatar}><Text style={styles.avatarText}>{props.profile.initials}</Text></View>
+        <Text style={styles.titleLeft}>Message {props.profile.name}</Text>
+        <Text style={styles.caption}>Write a short request. If they accept, the chat opens.</Text>
+      </View>
+      <TextInput
+        style={[styles.input, styles.bio]}
+        multiline
+        maxLength={220}
+        placeholder="Mention where you crossed paths or why you want to talk."
+        value={props.draft}
+        onChangeText={props.onDraft}
+      />
+      <Pressable style={styles.cta} onPress={props.onSend}>
+        <Text style={styles.ctaText}>Send request</Text>
+      </Pressable>
+    </ScrollView>
+  );
+}
+
+function ChatScreen(props: { match: { profile: typeof demoProfiles[number]; messages: Array<{ text: string; mine: boolean }> }; onBack: () => void; onSend: (text: string) => void }) {
+  const [draft, setDraft] = useState("");
+  return (
+    <View style={styles.flex}>
+      <Text style={styles.chatTitle} onPress={props.onBack}>‹ {props.match.profile.name}</Text>
+      <ScrollView contentContainerStyle={styles.chatBody}>
+        {props.match.messages.map((message, index) => (
+          <View key={`${message.text}-${index}`} style={[styles.bubble, message.mine && styles.bubbleMine]}>
+            <Text style={[styles.bubbleText, message.mine && styles.bubbleTextMine]}>{message.text}</Text>
+          </View>
+        ))}
+      </ScrollView>
+      <View style={styles.inputBar}>
+        <TextInput style={styles.chatInput} placeholder="Message" value={draft} onChangeText={setDraft} />
+        <Pressable
+          style={styles.sendButton}
+          onPress={() => {
+            const text = draft.trim();
+            if (!text) return;
+            props.onSend(text);
+            setDraft("");
+          }}
+        >
+          <Text style={styles.ctaText}>Send</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#fff" },
   flex: { flex: 1 },
   centerScreen: { flexGrow: 1, justifyContent: "center", padding: theme.screenPadding, gap: 18 },
   screen: { padding: theme.screenPadding, gap: 14 },
+  screenWithTabs: { padding: theme.screenPadding, paddingBottom: 92, gap: 14 },
   brandRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
   brandIcon: { width: 28, height: 28, borderRadius: 10, backgroundColor: theme.accent, alignItems: "center", justifyContent: "center" },
   brandIconText: { color: "#fff", fontWeight: "600" },
@@ -534,4 +778,28 @@ const styles = StyleSheet.create({
   profileName: { color: theme.text, fontSize: 16, fontWeight: "600" },
   requestButton: { borderRadius: 999, backgroundColor: theme.text, paddingHorizontal: 12, paddingVertical: 8 },
   requestButtonText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  successBanner: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, backgroundColor: "#ecfdf3", borderRadius: theme.radius, padding: 12 },
+  dismissText: { color: "#067647", fontWeight: "700", fontSize: 13 },
+  tabs: { position: "absolute", left: 0, right: 0, bottom: 0, height: 74, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.separator, backgroundColor: "#fff", flexDirection: "row", alignItems: "center", justifyContent: "space-around", paddingBottom: 8 },
+  tabButton: { minWidth: 64, height: 44, alignItems: "center", justifyContent: "center" },
+  tabText: { color: theme.muted, fontSize: 12, fontWeight: "600" },
+  tabTextActive: { color: theme.accent },
+  chevron: { color: theme.muted, fontSize: 24 },
+  discoverCard: { minHeight: 330, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: 16, padding: 16, alignItems: "center", justifyContent: "center", gap: 10 },
+  bigAvatar: { width: 150, height: 150, borderRadius: 24, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center" },
+  bigAvatarText: { color: theme.tagText, fontSize: 42, fontWeight: "700" },
+  actionRow: { flexDirection: "row", gap: 10 },
+  outlineSmall: { flex: 1, height: 42, borderRadius: theme.radius, borderWidth: 1.5, borderColor: theme.text, alignItems: "center", justifyContent: "center" },
+  ctaSmall: { flex: 1, height: 42, borderRadius: theme.radius, backgroundColor: theme.text, alignItems: "center", justifyContent: "center" },
+  requestCard: { borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: theme.radius, padding: 12, gap: 10 },
+  profileHeader: { alignItems: "center", gap: 8 },
+  chatTitle: { textAlign: "center", fontSize: 16, fontWeight: "600", padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.separator },
+  chatBody: { padding: theme.screenPadding, gap: 10 },
+  bubble: { alignSelf: "flex-start", maxWidth: "78%", backgroundColor: theme.surface, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 9 },
+  bubbleMine: { alignSelf: "flex-end", backgroundColor: theme.accent },
+  bubbleText: { color: theme.text, fontSize: 15 },
+  bubbleTextMine: { color: "#fff" },
+  inputBar: { flexDirection: "row", alignItems: "center", gap: 8, padding: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.separator },
+  chatInput: { flex: 1, backgroundColor: theme.surface, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15 },
+  sendButton: { borderRadius: 999, backgroundColor: theme.text, paddingHorizontal: 14, paddingVertical: 10 },
 });
