@@ -40,6 +40,11 @@ const genderOptions: Array<{ label: string; value: GenderIdentity }> = [
 ];
 
 const meetOptions = ["women", "men", "non_binary_people", "everyone"];
+const nearbyProfiles = [
+  { name: "Mira", place: "Unitobler library", detail: "Coffee break nearby" },
+  { name: "Noah", place: "Bern main library", detail: "Studying medicine" },
+  { name: "Lea", place: "BFH campus", detail: "Open to a walk after class" },
+];
 const institutionGroups = [
   {
     title: "Universities in Bern",
@@ -74,7 +79,7 @@ const institutionGroups = [
 ];
 
 export default function App() {
-  const [step, setStep] = useState<"auth" | "onboarding" | "app">("auth");
+  const [step, setStep] = useState<"auth" | "onboarding" | "review" | "home">("auth");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isAuthenticating, setIsAuthenticating] = useState(false);
@@ -196,8 +201,8 @@ export default function App() {
       await reviewVerificationAutomatically(verificationRequestId);
 
       setSubmitStage("Loading review result...");
-      await refreshReview(data.user.id);
-      setStep("app");
+      const latestReview = await refreshReview(data.user.id);
+      setStep(latestReview?.status === "verified" ? "home" : "review");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       setProfileMessage(message);
@@ -229,10 +234,12 @@ export default function App() {
       const latestReview = await getLatestVerificationReview(currentUserId);
       setReview(latestReview);
       if (!latestReview) setReviewMessage("No Legi review request found yet.");
+      return latestReview;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown review error";
       setReviewMessage(message);
       Alert.alert("Could not refresh review", message);
+      return null;
     } finally {
       setIsRefreshingReview(false);
     }
@@ -372,7 +379,7 @@ export default function App() {
           </ScrollView>
         )}
 
-        {step === "app" && (
+        {step === "review" && (
           <ScrollView contentContainerStyle={styles.screen}>
             <Text style={styles.navTitle}>{review?.status === "verified" ? "Review verified" : review?.status === "rejected" ? "Review rejected" : "Review pending"}</Text>
             <View style={styles.notice}>
@@ -396,8 +403,52 @@ export default function App() {
             <Pressable style={[styles.outline, isRefreshingReview && styles.disabled]} disabled={isRefreshingReview} onPress={() => refreshReview()}>
               <Text style={styles.outlineText}>{isRefreshingReview ? "Refreshing..." : "Refresh status"}</Text>
             </Pressable>
+            {review?.status === "verified" && (
+              <Pressable style={styles.cta} onPress={() => setStep("home")}>
+                <Text style={styles.ctaText}>Enter UniMatch</Text>
+              </Pressable>
+            )}
             <Pressable style={styles.outline} onPress={() => setStep("onboarding")}>
               <Text style={styles.outlineText}>Edit submission</Text>
+            </Pressable>
+          </ScrollView>
+        )}
+
+        {step === "home" && (
+          <ScrollView contentContainerStyle={styles.screen}>
+            <Text style={styles.navTitle}>UniMatch</Text>
+            <View style={styles.notice}>
+              <Text style={styles.heading}>Verified student profile</Text>
+              <Text style={styles.caption}>
+                Your account is active. Nearby mode will only show students who are at enabled hotspots and have chosen to be visible.
+              </Text>
+            </View>
+            <View style={styles.homeHeader}>
+              <View>
+                <Text style={styles.titleLeft}>Nearby now</Text>
+                <Text style={styles.caption}>Demo profiles until nearby sessions are connected.</Text>
+              </View>
+              <View style={styles.livePill}>
+                <Text style={styles.livePillText}>Visible</Text>
+              </View>
+            </View>
+            {nearbyProfiles.map((profile) => (
+              <View key={profile.name} style={styles.profileRow}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{profile.name[0]}</Text>
+                </View>
+                <View style={styles.profileCopy}>
+                  <Text style={styles.profileName}>{profile.name}</Text>
+                  <Text style={styles.caption}>{profile.place}</Text>
+                  <Text style={styles.caption}>{profile.detail}</Text>
+                </View>
+                <Pressable style={styles.requestButton}>
+                  <Text style={styles.requestButtonText}>Request</Text>
+                </Pressable>
+              </View>
+            ))}
+            <Pressable style={styles.outline} onPress={() => setStep("review")}>
+              <Text style={styles.outlineText}>View verification</Text>
             </Pressable>
           </ScrollView>
         )}
@@ -436,6 +487,7 @@ const styles = StyleSheet.create({
   section: { gap: 10 },
   navTitle: { textAlign: "center", fontSize: 16, fontWeight: "500", marginBottom: 8 },
   title: { fontSize: 18, fontWeight: "500", textAlign: "center" },
+  titleLeft: { fontSize: 18, fontWeight: "500" },
   heading: { fontSize: 16, fontWeight: "500" },
   caption: { color: theme.muted, fontSize: 13, lineHeight: 18 },
   errorText: { color: "#b42318", fontSize: 13, lineHeight: 18, textAlign: "center" },
@@ -472,4 +524,14 @@ const styles = StyleSheet.create({
   reviewValue: { color: theme.muted, fontSize: 13, fontWeight: "600" },
   reviewPassed: { color: "#067647" },
   reviewFailed: { color: "#b42318" },
+  homeHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 },
+  livePill: { backgroundColor: "#ecfdf3", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
+  livePillText: { color: "#067647", fontSize: 12, fontWeight: "700" },
+  profileRow: { flexDirection: "row", alignItems: "center", gap: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: theme.radius, padding: 12 },
+  avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center" },
+  avatarText: { color: theme.tagText, fontSize: 20, fontWeight: "700" },
+  profileCopy: { flex: 1, gap: 2 },
+  profileName: { color: theme.text, fontSize: 16, fontWeight: "600" },
+  requestButton: { borderRadius: 999, backgroundColor: theme.text, paddingHorizontal: 12, paddingVertical: 8 },
+  requestButtonText: { color: "#fff", fontSize: 12, fontWeight: "700" },
 });
