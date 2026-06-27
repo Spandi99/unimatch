@@ -39,6 +39,36 @@ npm run start
 
 Use Expo Go or a development build to run it on iPhone and Android.
 
+## Mobile testing
+
+Fastest real-device loop:
+
+```powershell
+.\scripts\start-dev.ps1
+```
+
+Then open the Expo QR code with Expo Go on iPhone or Android. Your phone and PC should be on the same Wi-Fi.
+
+For web preview on the PC:
+
+```powershell
+npx.cmd expo start --web --port 8081 --clear
+```
+
+For native device preview:
+
+```powershell
+npx.cmd expo start --host lan --port 8081 --clear
+```
+
+The development helper starts:
+
+- OCR worker on `localhost:8788`
+- ngrok tunnel for Supabase to reach OCR
+- Expo web server on `localhost:8081`
+
+When ngrok starts, copy the `https://...ngrok-free.app` URL into Supabase Secret `LEGI_OCR_SERVICE_URL`.
+
 ## GitHub
 
 This folder is ready to become the GitHub repository. Suggested repo name: `unimatch`.

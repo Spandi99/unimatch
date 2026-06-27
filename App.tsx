@@ -1,6 +1,7 @@
 import * as ImagePicker from "expo-image-picker";
 import { StatusBar } from "expo-status-bar";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   Alert,
   Image,
@@ -47,6 +48,7 @@ const demoProfiles = [
   { initials: "LB", name: "Lena", age: 23, uni: "PHBern", degree: "Education", distance: "~470m", place: "PHBern cafe", bio: "Reading too much, hiking when not reading." },
 ];
 const appTabs = ["Nearby", "Discover", "Matches", "Profile"];
+const rememberMeKey = "unimatch.rememberMe";
 const institutionGroups = [
   {
     title: "Universities in Bern",
@@ -84,6 +86,8 @@ export default function App() {
   const [step, setStep] = useState<"auth" | "onboarding" | "review" | "home">("auth");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
+  const [isBooting, setIsBooting] = useState(true);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRefreshingReview, setIsRefreshingReview] = useState(false);
@@ -99,6 +103,8 @@ export default function App() {
   const [requestProfile, setRequestProfile] = useState<number | null>(null);
   const [requestDraft, setRequestDraft] = useState("");
   const [chatIndex, setChatIndex] = useState<number | null>(null);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [profileSaveMessage, setProfileSaveMessage] = useState("");
   const [incomingRequests, setIncomingRequests] = useState([
     { profile: demoProfiles[3], note: "I think we were both in the library earlier. Coffee after lectures?", time: "8m" },
     { profile: demoProfiles[0], note: "Your bio had me at mediocre pasta. Trade recipes?", time: "24m" },
@@ -118,6 +124,28 @@ export default function App() {
   });
 
   const canFinish = Boolean(draft.name.trim() && draft.birthdate && draft.photoUri && draft.legiUri);
+
+  useEffect(() => {
+    async function bootFromSession() {
+      const savedRememberMe = await AsyncStorage.getItem(rememberMeKey);
+      if (savedRememberMe === "false") {
+        setRememberMe(false);
+        setIsBooting(false);
+        return;
+      }
+
+      const session = (await supabase.auth.getSession()).data.session;
+      if (session?.user) {
+        await routeAfterAuthentication(session.user.id);
+      }
+      setIsBooting(false);
+    }
+
+    bootFromSession().catch((error) => {
+      console.warn(error);
+      setIsBooting(false);
+    });
+  }, []);
 
   async function authenticate(mode: "sign-in" | "sign-up") {
     if (!email.trim() || !password) {
@@ -146,6 +174,7 @@ export default function App() {
         return;
       }
 
+      await AsyncStorage.setItem(rememberMeKey, rememberMe ? "true" : "false");
       setProfileMessage("");
       await routeAfterAuthentication(session.user.id);
     } catch (error) {
@@ -299,11 +328,52 @@ export default function App() {
     }
   }
 
+  async function saveProfileBasics() {
+    setProfileSaveMessage("");
+    const { data } = await supabase.auth.getUser();
+    if (!data.user) {
+      setProfileSaveMessage("Please sign in again.");
+      return;
+    }
+
+    const result = await supabase
+      .from("profiles")
+      .update({
+        name: draft.name,
+        birthdate: draft.birthdate,
+        gender: draft.gender,
+        wants_to_meet: draft.wantsToMeet,
+        university: draft.university ?? null,
+        degree: draft.degree ?? null,
+        bio: draft.bio ?? "",
+      })
+      .eq("id", data.user.id);
+
+    if (result.error) {
+      setProfileSaveMessage(result.error.message);
+      return;
+    }
+
+    setIsEditingProfile(false);
+    setProfileSaveMessage("Profile saved.");
+  }
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="dark" />
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.flex}>
-        {step === "auth" && (
+        {isBooting && (
+          <View style={styles.centerScreen}>
+            <View style={styles.brandRow}>
+              <View style={styles.brandIcon}>
+                <Text style={styles.brandIconText}>U</Text>
+              </View>
+              <Text style={styles.brand}>UniMatch</Text>
+            </View>
+            <Text style={styles.caption}>Checking your session...</Text>
+          </View>
+        )}
+        {!isBooting && step === "auth" && (
           <ScrollView contentContainerStyle={styles.centerScreen}>
             <View style={styles.brandRow}>
               <View style={styles.brandIcon}>
@@ -319,6 +389,12 @@ export default function App() {
 
             <TextInput style={styles.input} placeholder="Email" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
             <TextInput style={styles.input} placeholder="Password" secureTextEntry value={password} onChangeText={setPassword} />
+            <Pressable style={styles.checkRow} onPress={() => setRememberMe((value) => !value)}>
+              <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                <Text style={styles.checkboxText}>{rememberMe ? "✓" : ""}</Text>
+              </View>
+              <Text style={styles.checkLabel}>Stay signed in on this device</Text>
+            </Pressable>
 
             <Pressable style={[styles.cta, isAuthenticating && styles.disabled]} disabled={isAuthenticating} onPress={() => authenticate("sign-up")}>
               <Text style={styles.ctaText}>{isAuthenticating ? "Working..." : "Create account"}</Text>
@@ -330,7 +406,7 @@ export default function App() {
           </ScrollView>
         )}
 
-        {step === "onboarding" && (
+        {!isBooting && step === "onboarding" && (
           <ScrollView contentContainerStyle={styles.screen}>
             <Text style={styles.navTitle}>Create profile</Text>
             <Pressable style={styles.photoBox} onPress={chooseProfilePhoto}>
@@ -433,7 +509,7 @@ export default function App() {
           </ScrollView>
         )}
 
-        {step === "review" && (
+        {!isBooting && step === "review" && (
           <ScrollView contentContainerStyle={styles.screen}>
             <Text style={styles.navTitle}>{review?.status === "verified" ? "Review verified" : review?.status === "rejected" ? "Review rejected" : "Review pending"}</Text>
             <View style={styles.notice}>
@@ -468,7 +544,7 @@ export default function App() {
           </ScrollView>
         )}
 
-        {step === "home" && (
+        {!isBooting && step === "home" && (
           <View style={styles.flex}>
             {chatIndex !== null ? (
               <ChatScreen
@@ -491,6 +567,7 @@ export default function App() {
                   }
                   Alert.alert("Request sent", "The chat opens only if they accept.");
                   setRequestProfile(null);
+                  setSelectedProfile(null);
                   setRequestDraft("");
                   setAppTab(2);
                 }}
@@ -535,10 +612,10 @@ export default function App() {
                           <View style={styles.avatar}><Text style={styles.avatarText}>{profile.initials}</Text></View>
                           <View style={styles.profileCopy}>
                             <Text style={styles.profileName}>{profile.name}, {profile.age}</Text>
-                            <Text style={styles.caption}>{profile.place} · {profile.distance}</Text>
+                            <Text style={styles.caption}>{profile.place} - {profile.distance}</Text>
                             <Text style={styles.caption}>{profile.degree}</Text>
                           </View>
-                          <Text style={styles.chevron}>›</Text>
+                          <Text style={styles.chevron}>Next</Text>
                         </Pressable>
                       ))}
                     </>
@@ -548,12 +625,20 @@ export default function App() {
                       <View style={styles.discoverCard}>
                         <View style={styles.bigAvatar}><Text style={styles.bigAvatarText}>{demoProfiles[2].initials}</Text></View>
                         <Text style={styles.title}>{demoProfiles[2].name}, {demoProfiles[2].age}</Text>
-                        <Text style={styles.caption}>{demoProfiles[2].uni} · {demoProfiles[2].degree}</Text>
+                        <Text style={styles.caption}>{demoProfiles[2].uni} - {demoProfiles[2].degree}</Text>
                         <Text style={styles.caption}>{demoProfiles[2].bio}</Text>
                       </View>
                       <View style={styles.actionRow}>
                         <Pressable style={styles.outlineSmall}><Text style={styles.outlineText}>Pass</Text></Pressable>
-                        <Pressable style={styles.ctaSmall}><Text style={styles.ctaText}>Request</Text></Pressable>
+                        <Pressable
+                          style={styles.ctaSmall}
+                          onPress={() => {
+                            setRequestProfile(2);
+                            setRequestDraft("");
+                          }}
+                        >
+                          <Text style={styles.ctaText}>Request</Text>
+                        </Pressable>
                       </View>
                     </>
                   )}
@@ -596,19 +681,21 @@ export default function App() {
                   )}
                   {appTab === 3 && (
                     <>
-                      <View style={styles.profileHeader}>
-                        <View style={styles.bigAvatar}><Text style={styles.bigAvatarText}>{draft.name ? draft.name.slice(0, 2).toUpperCase() : "U"}</Text></View>
-                        <Text style={styles.title}>{draft.name || "Your profile"}</Text>
-                        <Text style={styles.caption}>{draft.university} · {draft.degree || "Student"}</Text>
-                      </View>
-                      <View style={styles.reviewCard}>
-                        <Text style={styles.heading}>About</Text>
-                        <Text style={styles.caption}>{draft.bio || "No bio yet."}</Text>
-                        <Text style={styles.caption}>Looking to meet: {draft.wantsToMeet.join(", ").replace(/_/g, " ")}</Text>
-                      </View>
-                      <Pressable style={styles.outline} onPress={() => setStep("onboarding")}>
-                        <Text style={styles.outlineText}>Edit profile</Text>
-                      </Pressable>
+                      <ProfileTab
+                        draft={draft}
+                        isEditing={isEditingProfile}
+                        message={profileSaveMessage}
+                        onEdit={() => {
+                          setProfileSaveMessage("");
+                          setIsEditingProfile(true);
+                        }}
+                        onCancel={() => {
+                          setProfileSaveMessage("");
+                          setIsEditingProfile(false);
+                        }}
+                        onSave={saveProfileBasics}
+                        onDraftChange={(nextDraft) => setDraft((current) => ({ ...current, ...nextDraft }))}
+                      />
                     </>
                   )}
                 </ScrollView>
@@ -649,12 +736,14 @@ function ReviewRow(props: { label: string; value: boolean | null | undefined }) 
 function ProfileDetail(props: { profile: typeof demoProfiles[number]; onBack: () => void; onRequest: () => void }) {
   return (
     <ScrollView contentContainerStyle={styles.screen}>
-      <Text style={styles.navTitle} onPress={props.onBack}>‹ Nearby</Text>
+      <Pressable style={styles.backButton} onPress={props.onBack}>
+        <Text style={styles.backText}>Back to Nearby</Text>
+      </Pressable>
       <View style={styles.discoverCard}>
         <View style={styles.bigAvatar}><Text style={styles.bigAvatarText}>{props.profile.initials}</Text></View>
         <Text style={styles.title}>{props.profile.name}, {props.profile.age}</Text>
-        <Text style={styles.caption}>{props.profile.uni} · {props.profile.degree}</Text>
-        <Text style={styles.caption}>{props.profile.place} · {props.profile.distance}</Text>
+        <Text style={styles.caption}>{props.profile.uni} - {props.profile.degree}</Text>
+        <Text style={styles.caption}>{props.profile.place} - {props.profile.distance}</Text>
         <Text style={styles.caption}>{props.profile.bio}</Text>
       </View>
       <Pressable style={styles.cta} onPress={props.onRequest}>
@@ -667,7 +756,9 @@ function ProfileDetail(props: { profile: typeof demoProfiles[number]; onBack: ()
 function RequestComposer(props: { profile: typeof demoProfiles[number]; draft: string; onDraft: (value: string) => void; onBack: () => void; onSend: () => void }) {
   return (
     <ScrollView contentContainerStyle={styles.screen}>
-      <Text style={styles.navTitle} onPress={props.onBack}>‹ Profile</Text>
+      <Pressable style={styles.backButton} onPress={props.onBack}>
+        <Text style={styles.backText}>Back to Profile</Text>
+      </Pressable>
       <View style={styles.profileHeader}>
         <View style={styles.avatar}><Text style={styles.avatarText}>{props.profile.initials}</Text></View>
         <Text style={styles.titleLeft}>Message {props.profile.name}</Text>
@@ -692,7 +783,9 @@ function ChatScreen(props: { match: { profile: typeof demoProfiles[number]; mess
   const [draft, setDraft] = useState("");
   return (
     <View style={styles.flex}>
-      <Text style={styles.chatTitle} onPress={props.onBack}>‹ {props.match.profile.name}</Text>
+      <Pressable style={styles.chatTitle} onPress={props.onBack}>
+        <Text style={styles.chatTitleText}>Back to Matches - {props.match.profile.name}</Text>
+      </Pressable>
       <ScrollView contentContainerStyle={styles.chatBody}>
         {props.match.messages.map((message, index) => (
           <View key={`${message.text}-${index}`} style={[styles.bubble, message.mine && styles.bubbleMine]}>
@@ -715,6 +808,58 @@ function ChatScreen(props: { match: { profile: typeof demoProfiles[number]; mess
         </Pressable>
       </View>
     </View>
+  );
+}
+
+function ProfileTab(props: {
+  draft: ProfileDraft;
+  isEditing: boolean;
+  message: string;
+  onEdit: () => void;
+  onCancel: () => void;
+  onSave: () => void;
+  onDraftChange: (draft: Partial<ProfileDraft>) => void;
+}) {
+  if (props.isEditing) {
+    return (
+      <>
+        <View style={styles.profileHeader}>
+          <View style={styles.bigAvatar}><Text style={styles.bigAvatarText}>{props.draft.name ? props.draft.name.slice(0, 2).toUpperCase() : "U"}</Text></View>
+          <Text style={styles.title}>Edit profile</Text>
+        </View>
+        <TextInput style={styles.input} placeholder="Name" value={props.draft.name} onChangeText={(name) => props.onDraftChange({ name })} />
+        <TextInput style={styles.input} placeholder="Faculty / degree" value={props.draft.degree} onChangeText={(degree) => props.onDraftChange({ degree })} />
+        <TextInput style={[styles.input, styles.bio]} placeholder="Bio" multiline value={props.draft.bio} onChangeText={(bio) => props.onDraftChange({ bio })} />
+        {props.message ? <Text style={props.message === "Profile saved." ? styles.progressText : styles.errorText}>{props.message}</Text> : null}
+        <View style={styles.actionRow}>
+          <Pressable style={styles.outlineSmall} onPress={props.onCancel}>
+            <Text style={styles.outlineText}>Cancel</Text>
+          </Pressable>
+          <Pressable style={styles.ctaSmall} onPress={props.onSave}>
+            <Text style={styles.ctaText}>Save</Text>
+          </Pressable>
+        </View>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <View style={styles.profileHeader}>
+        <View style={styles.bigAvatar}><Text style={styles.bigAvatarText}>{props.draft.name ? props.draft.name.slice(0, 2).toUpperCase() : "U"}</Text></View>
+        <Text style={styles.title}>{props.draft.name || "Your profile"}</Text>
+        <Text style={styles.caption}>{props.draft.university} - {props.draft.degree || "Student"}</Text>
+      </View>
+      <View style={styles.reviewCard}>
+        <Text style={styles.heading}>About</Text>
+        <Text style={styles.caption}>{props.draft.bio || "No bio yet."}</Text>
+        <Text style={styles.caption}>Looking to meet: {props.draft.wantsToMeet.join(", ").replace(/_/g, " ")}</Text>
+      </View>
+      {props.message ? <Text style={styles.progressText}>{props.message}</Text> : null}
+      <Pressable style={styles.outline} onPress={props.onEdit}>
+        <Text style={styles.outlineText}>Edit profile</Text>
+      </Pressable>
+    </>
   );
 }
 
@@ -752,6 +897,11 @@ const styles = StyleSheet.create({
   ctaText: { color: "#fff", fontSize: 14, fontWeight: "500" },
   outline: { height: 48, borderRadius: theme.radius, borderWidth: 1.5, borderColor: theme.text, alignItems: "center", justifyContent: "center" },
   outlineText: { color: theme.text, fontSize: 14, fontWeight: "500" },
+  checkRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: theme.separator, alignItems: "center", justifyContent: "center", backgroundColor: "#fff" },
+  checkboxChecked: { backgroundColor: theme.text, borderColor: theme.text },
+  checkboxText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  checkLabel: { color: theme.text, fontSize: 14 },
   disabled: { opacity: 0.45 },
   photoBox: { height: 180, borderRadius: 16, backgroundColor: theme.surface, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   photo: { width: "100%", height: "100%" },
@@ -778,6 +928,8 @@ const styles = StyleSheet.create({
   profileName: { color: theme.text, fontSize: 16, fontWeight: "600" },
   requestButton: { borderRadius: 999, backgroundColor: theme.text, paddingHorizontal: 12, paddingVertical: 8 },
   requestButtonText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  backButton: { alignSelf: "flex-start", borderRadius: 999, backgroundColor: theme.surface, paddingHorizontal: 12, paddingVertical: 8 },
+  backText: { color: theme.text, fontSize: 13, fontWeight: "700" },
   successBanner: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, backgroundColor: "#ecfdf3", borderRadius: theme.radius, padding: 12 },
   dismissText: { color: "#067647", fontWeight: "700", fontSize: 13 },
   tabs: { position: "absolute", left: 0, right: 0, bottom: 0, height: 74, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.separator, backgroundColor: "#fff", flexDirection: "row", alignItems: "center", justifyContent: "space-around", paddingBottom: 8 },
@@ -793,7 +945,8 @@ const styles = StyleSheet.create({
   ctaSmall: { flex: 1, height: 42, borderRadius: theme.radius, backgroundColor: theme.text, alignItems: "center", justifyContent: "center" },
   requestCard: { borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: theme.radius, padding: 12, gap: 10 },
   profileHeader: { alignItems: "center", gap: 8 },
-  chatTitle: { textAlign: "center", fontSize: 16, fontWeight: "600", padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.separator },
+  chatTitle: { padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.separator },
+  chatTitleText: { textAlign: "center", fontSize: 16, fontWeight: "600", color: theme.text },
   chatBody: { padding: theme.screenPadding, gap: 10 },
   bubble: { alignSelf: "flex-start", maxWidth: "78%", backgroundColor: theme.surface, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 9 },
   bubbleMine: { alignSelf: "flex-end", backgroundColor: theme.accent },
