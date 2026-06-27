@@ -26,6 +26,11 @@ export type VerificationReview = {
   checks: LegiReviewChecks | null;
 };
 
+export type AutomatedReviewResult = {
+  status: VerificationStatus;
+  checks: LegiReviewChecks;
+};
+
 export async function signInWithEmail(email: string, password: string) {
   return supabase.auth.signInWithPassword({ email, password });
 }
@@ -74,6 +79,16 @@ export async function createVerificationRequest(userId: string, legiUri: string)
 
   if (result.error) throw new Error(`Legi review request failed: ${result.error.message}`);
   return result;
+}
+
+export async function reviewVerificationAutomatically(verificationRequestId: string): Promise<AutomatedReviewResult> {
+  const result = await supabase.functions.invoke<AutomatedReviewResult>("review-legi", {
+    body: { verificationRequestId },
+  });
+
+  if (result.error) throw new Error(`Legi review failed: ${result.error.message}`);
+  if (!result.data) throw new Error("Legi review failed: empty response");
+  return result.data;
 }
 
 export async function getLatestVerificationReview(userId: string): Promise<VerificationReview | null> {

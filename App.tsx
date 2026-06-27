@@ -20,6 +20,7 @@ import {
   VerificationReview,
   createVerificationRequest,
   getLatestVerificationReview,
+  reviewVerificationAutomatically,
   saveProfile,
   signInWithEmail,
   signUpWithEmail,
@@ -82,6 +83,7 @@ export default function App() {
   const [authMessage, setAuthMessage] = useState("");
   const [profileMessage, setProfileMessage] = useState("");
   const [reviewMessage, setReviewMessage] = useState("");
+  const [submitStage, setSubmitStage] = useState("");
   const [review, setReview] = useState<VerificationReview | null>(null);
   const [showInstitutions, setShowInstitutions] = useState(false);
   const [draft, setDraft] = useState<ProfileDraft>({
@@ -164,6 +166,7 @@ export default function App() {
 
   async function finishProfile() {
     setProfileMessage("");
+    setSubmitStage("Checking your session...");
     setIsSubmitting(true);
     try {
       let { data } = await supabase.auth.getUser();
@@ -178,12 +181,21 @@ export default function App() {
         throw new Error("You are not signed in. Please sign in again before submitting your Legi review.");
       }
 
+      setSubmitStage("Saving your profile...");
       const result = await saveProfile(data.user.id, draft);
       if (result.error) throw result.error;
 
+      setSubmitStage("Uploading your Legi...");
       const verification = await createVerificationRequest(data.user.id, draft.legiUri);
       if (verification.error) throw verification.error;
 
+      const verificationRequestId = verification.data?.id;
+      if (!verificationRequestId) throw new Error("Legi review request was created without an id.");
+
+      setSubmitStage("OCR is checking the Legi criteria...");
+      await reviewVerificationAutomatically(verificationRequestId);
+
+      setSubmitStage("Loading review result...");
       await refreshReview(data.user.id);
       setStep("app");
     } catch (error) {
@@ -192,6 +204,7 @@ export default function App() {
       Alert.alert("Could not submit profile", message);
     } finally {
       setIsSubmitting(false);
+      setSubmitStage("");
     }
   }
 
@@ -352,6 +365,7 @@ export default function App() {
             </Pressable>
 
             {profileMessage ? <Text style={styles.errorText}>{profileMessage}</Text> : null}
+            {submitStage ? <Text style={styles.progressText}>{submitStage}</Text> : null}
             <Pressable style={[styles.cta, (!canFinish || isSubmitting) && styles.disabled]} disabled={!canFinish || isSubmitting} onPress={finishProfile}>
               <Text style={styles.ctaText}>{isSubmitting ? "Submitting..." : "Submit for review"}</Text>
             </Pressable>
@@ -425,6 +439,7 @@ const styles = StyleSheet.create({
   heading: { fontSize: 16, fontWeight: "500" },
   caption: { color: theme.muted, fontSize: 13, lineHeight: 18 },
   errorText: { color: "#b42318", fontSize: 13, lineHeight: 18, textAlign: "center" },
+  progressText: { color: theme.muted, fontSize: 13, lineHeight: 18, textAlign: "center" },
   input: { backgroundColor: theme.surface, borderRadius: theme.radius, paddingHorizontal: 12, paddingVertical: 12, fontSize: 16 },
   select: { backgroundColor: theme.surface, borderRadius: theme.radius, paddingHorizontal: 12, paddingVertical: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   selectText: { flex: 1, fontSize: 16, color: theme.text },

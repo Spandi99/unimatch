@@ -9,6 +9,7 @@ The original prototype was native SwiftUI for iOS only. This repository starts t
 - Student verification flow placeholder: SWITCH edu-ID or Legi review.
 - Private email/password login with Supabase Auth.
 - Legi photo review before provisional student access.
+- Supabase Edge Function for automated Legi review, with free Tesseract OCR mode, free demo mode and optional OpenAI mode.
 - Onboarding with name, birthdate, gender, preferences and one profile photo.
 - Profile records stored in Supabase.
 - Photo upload target via Supabase Storage.
@@ -20,14 +21,17 @@ The original prototype was native SwiftUI for iOS only. This repository starts t
 1. Create a Supabase project.
 2. Run `supabase/schema.sql` in the Supabase SQL editor.
 3. Create private storage buckets named `profile-photos` and `verification-documents`.
-4. Copy `.env.example` to `.env` and fill in the project URL and publishable key.
-5. Install dependencies:
+4. Deploy the `review-legi` Edge Function.
+5. For free OCR, run/deploy `ocr-worker` and set `LEGI_REVIEW_MODE=tesseract` plus `LEGI_OCR_SERVICE_URL`.
+6. For fast no-OCR testing, set `LEGI_REVIEW_MODE=demo`.
+7. Copy `.env.example` to `.env` and fill in the project URL and publishable key.
+8. Install dependencies:
 
 ```bash
 npm install
 ```
 
-6. Start the app:
+9. Start the app:
 
 ```bash
 npm run start
