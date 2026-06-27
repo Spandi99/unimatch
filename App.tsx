@@ -23,6 +23,7 @@ import {
   VerificationReview,
   createVerificationRequest,
   getLatestVerificationReview,
+  resendConfirmationEmail,
   reviewVerificationAutomatically,
   saveProfile,
   signInWithEmail,
@@ -271,6 +272,29 @@ export default function App() {
     }
   }
 
+  async function resendConfirmation() {
+    const targetEmail = pendingConfirmationEmail || email.trim();
+    if (!targetEmail) {
+      Alert.alert("Missing email", "Enter your email first.");
+      return;
+    }
+
+    setAuthMessage("");
+    setIsAuthenticating(true);
+    try {
+      const result = await resendConfirmationEmail(targetEmail, getAuthRedirectUrl());
+      if (result.error) throw result.error;
+      setPendingConfirmationEmail(targetEmail);
+      setAuthMessage("Confirmation email sent again. Check your inbox and spam folder.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not resend confirmation email.";
+      setAuthMessage(message);
+      Alert.alert("Could not resend email", message);
+    } finally {
+      setIsAuthenticating(false);
+    }
+  }
+
   async function chooseProfilePhoto() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -491,6 +515,11 @@ export default function App() {
             <Pressable style={[styles.outline, isAuthenticating && styles.disabled]} disabled={isAuthenticating} onPress={() => authenticate("sign-in")}>
               <Text style={styles.outlineText}>{pendingConfirmationEmail ? "I confirmed it - sign in" : "Sign in"}</Text>
             </Pressable>
+            {pendingConfirmationEmail ? (
+              <Pressable style={styles.textButton} disabled={isAuthenticating} onPress={resendConfirmation}>
+                <Text style={styles.textButtonText}>Send confirmation email again</Text>
+              </Pressable>
+            ) : null}
             {authMessage ? <Text style={styles.errorText}>{authMessage}</Text> : null}
           </ScrollView>
         )}
@@ -1004,6 +1033,8 @@ const styles = StyleSheet.create({
   ctaText: { color: "#fff", fontSize: 14, fontWeight: "500" },
   outline: { height: 48, borderRadius: theme.radius, borderWidth: 1.5, borderColor: theme.text, alignItems: "center", justifyContent: "center" },
   outlineText: { color: theme.text, fontSize: 14, fontWeight: "500" },
+  textButton: { minHeight: 36, alignItems: "center", justifyContent: "center" },
+  textButtonText: { color: theme.accent, fontSize: 14, fontWeight: "600" },
   checkRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: theme.separator, alignItems: "center", justifyContent: "center", backgroundColor: "#fff" },
   checkboxChecked: { backgroundColor: theme.text, borderColor: theme.text },

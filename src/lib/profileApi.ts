@@ -43,6 +43,14 @@ export async function signUpWithEmail(email: string, password: string, emailRedi
   });
 }
 
+export async function resendConfirmationEmail(email: string, emailRedirectTo?: string) {
+  return supabase.auth.resend({
+    type: "signup",
+    email,
+    options: emailRedirectTo ? { emailRedirectTo } : undefined,
+  });
+}
+
 export async function sendMagicLink(email: string) {
   return supabase.auth.signInWithOtp({
     email,
