@@ -69,7 +69,17 @@ const demoProfiles = [
   { initials: "YA", name: "Yara", age: 24, uni: "BFH", degree: "Social Work", distance: "~950m", place: "Bern main library", bio: "Volunteering, live music, and debating where the best falafel is.", photo: profileImages[0] },
   { initials: "LU", name: "Luc", age: 22, uni: "University of Bern", degree: "Psychology", distance: "~1.1km", place: "Unitobler courtyard", bio: "Podcasts, tennis, and overthinking cafe seating arrangements.", photo: profileImages[2] },
 ];
-const appTabs = ["Nearby", "Discover", "Matches", "Profile"];
+const hotspotCategories = ["All", "Libraries", "Cafes", "Mensa", "Campus"];
+const hotspots = [
+  { name: "Von-Roll-Bibliothek", category: "Libraries", status: "Jetzt viele da", distance: "~120 m", people: 34, tone: "busy" },
+  { name: "Unitobler Bibliothek", category: "Libraries", status: "Ruhig aktiv", distance: "~280 m", people: 18, tone: "active" },
+  { name: "Bern main library", category: "Libraries", status: "Gute Lernstimmung", distance: "~450 m", people: 26, tone: "active" },
+  { name: "Mensa VonRoll", category: "Mensa", status: "Mittagspause", distance: "~600 m", people: 41, tone: "warm" },
+  { name: "Grosse Schanze cafe", category: "Cafes", status: "Gemutlich", distance: "~850 m", people: 12, tone: "warm" },
+  { name: "Muesmatt campus", category: "Campus", status: "Nach Vorlesungen", distance: "~1.2 km", people: 22, tone: "active" },
+];
+const appTabs = ["Nearby", "Hotspots", "Discover", "Matches", "Profile"];
+const requestLifetimeHours = 48;
 const rememberMeKey = "unimatch.rememberMe";
 const pendingSignupEmailKey = "unimatch.pendingSignupEmail";
 const pendingSignupPasswordKey = "unimatch.pendingSignupPassword";
@@ -132,7 +142,11 @@ export default function App() {
   const [requestProfile, setRequestProfile] = useState<number | null>(null);
   const [requestDraft, setRequestDraft] = useState("");
   const [discoverQueue, setDiscoverQueue] = useState(demoProfiles.map((_, index) => index));
-  const [outgoingRequests, setOutgoingRequests] = useState<Array<{ profile: typeof demoProfiles[number]; note: string; time: string }>>([]);
+  const [outgoingRequests, setOutgoingRequests] = useState<Array<{ profile: typeof demoProfiles[number]; note: string; createdAt: number }>>([
+    { profile: demoProfiles[4], note: "Saw you near VonRoll earlier. Coffee break this week?", createdAt: Date.now() - 7 * 60 * 60 * 1000 },
+  ]);
+  const [selectedHotspot, setSelectedHotspot] = useState(hotspots[0].name);
+  const [hotspotFilter, setHotspotFilter] = useState("All");
   const [chatIndex, setChatIndex] = useState<number | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileSaveMessage, setProfileSaveMessage] = useState("");
@@ -156,6 +170,8 @@ export default function App() {
 
   const canFinish = Boolean(draft.name.trim() && draft.birthdate && draft.photoUri && draft.legiUri);
   const currentDiscoverIndex = discoverQueue[0] ?? null;
+  const activeOutgoingRequests = outgoingRequests.filter((request) => requestHoursLeft(request.createdAt) > 0);
+  const visibleHotspots = hotspots.filter((hotspot) => hotspotFilter === "All" || hotspot.category === hotspotFilter);
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -500,6 +516,11 @@ export default function App() {
   function openRequestForProfile(index: number) {
     setRequestProfile(index);
     setRequestDraft("");
+  }
+
+  function requestHoursLeft(createdAt: number) {
+    const elapsedHours = (Date.now() - createdAt) / (60 * 60 * 1000);
+    return Math.max(0, Math.ceil(requestLifetimeHours - elapsedHours));
   }
 
   async function chooseProfilePhoto() {
@@ -960,7 +981,7 @@ export default function App() {
                   }
                   Alert.alert("Request sent", "The chat opens only if they accept.");
                   setOutgoingRequests((current) => [
-                    { profile: demoProfiles[requestProfile], note: requestDraft.trim(), time: "now" },
+                    { profile: demoProfiles[requestProfile], note: requestDraft.trim(), createdAt: Date.now() },
                     ...current,
                   ]);
                   setDiscoverQueue((current) => current.filter((profileIndex) => profileIndex !== requestProfile));
@@ -998,7 +1019,7 @@ export default function App() {
                       <View style={styles.homeHeader}>
                         <View>
                           <Text style={styles.titleLeft}>Nearby now</Text>
-                          <Text style={styles.caption}>People at active campus hotspots.</Text>
+                          <Text style={styles.caption}>{selectedHotspot}</Text>
                         </View>
                         <VisibilityToggle visible={isNearbyVisible} onPress={() => setIsNearbyVisible((value) => !value)} />
                       </View>
@@ -1027,12 +1048,22 @@ export default function App() {
                     </>
                   )}
                   {appTab === 1 && (
+                    <HotspotsScreen
+                      hotspots={visibleHotspots}
+                      filters={hotspotCategories}
+                      activeFilter={hotspotFilter}
+                      selectedHotspot={selectedHotspot}
+                      onFilter={setHotspotFilter}
+                      onSelect={setSelectedHotspot}
+                    />
+                  )}
+                  {appTab === 2 && (
                     <>
                       {currentDiscoverIndex === null ? (
                         <EmptyDiscover onReset={() => setDiscoverQueue(demoProfiles.map((_, index) => index))} />
                       ) : (
                         <>
-                          <DiscoverCard profile={demoProfiles[currentDiscoverIndex]} remaining={discoverQueue.length} pulse={pulse} />
+                          <DiscoverCard profile={demoProfiles[currentDiscoverIndex]} remaining={discoverQueue.length} pulse={pulse} hotspot={selectedHotspot} />
                           <View style={styles.discoverActions}>
                             <Pressable style={styles.passButton} onPress={() => passDiscoverProfile(currentDiscoverIndex)}>
                               <Text style={styles.passButtonText}>Pass</Text>
@@ -1045,22 +1076,22 @@ export default function App() {
                       )}
                     </>
                   )}
-                  {appTab === 2 && (
+                  {appTab === 3 && (
                     <>
                       <Text style={styles.heading}>Open requests</Text>
-                      {outgoingRequests.length === 0 ? (
+                      {activeOutgoingRequests.length === 0 ? (
                         <View style={styles.requestCard}>
                           <Text style={styles.profileName}>No open requests</Text>
-                          <Text style={styles.caption}>Requests you send from Nearby or Discover will stay here until accepted.</Text>
+                          <Text style={styles.caption}>Requests disappear after 48h without a reply, so the app stays active.</Text>
                         </View>
                       ) : (
-                        outgoingRequests.map((request) => (
-                          <View key={`${request.profile.name}-${request.time}-${request.note}`} style={styles.requestCard}>
+                        activeOutgoingRequests.map((request) => (
+                          <View key={`${request.profile.name}-${request.createdAt}-${request.note}`} style={styles.requestCard}>
                             <View style={styles.requestHeader}>
                               <ProfilePhoto profile={request.profile} style={styles.smallAvatar} imageStyle={styles.avatarImage} />
                               <View style={styles.profileCopy}>
                                 <Text style={styles.profileName}>{request.profile.name}</Text>
-                                <Text style={styles.caption}>Waiting for reply - {request.time}</Text>
+                                <Text style={styles.caption}>Auto-removes in {requestHoursLeft(request.createdAt)}h</Text>
                               </View>
                               <Text style={styles.pendingPill}>Pending</Text>
                             </View>
@@ -1109,7 +1140,7 @@ export default function App() {
                       ))}
                     </>
                   )}
-                  {appTab === 3 && (
+                  {appTab === 4 && (
                     <>
                       <ProfileTab
                         draft={draft}
@@ -1188,6 +1219,60 @@ function VisibilityIcon(props: { visible: boolean }) {
   );
 }
 
+function HotspotsScreen(props: {
+  hotspots: typeof hotspots;
+  filters: string[];
+  activeFilter: string;
+  selectedHotspot: string;
+  onFilter: (filter: string) => void;
+  onSelect: (name: string) => void;
+}) {
+  return (
+    <>
+      <View style={styles.hotspotHero}>
+        <View style={styles.hotspotPin}>
+          <Text style={styles.hotspotPinText}>U</Text>
+        </View>
+        <View style={styles.profileCopy}>
+          <Text style={styles.titleLeft}>Hotspots</Text>
+          <Text style={styles.caption}>Choose where you want to be visible on campus.</Text>
+        </View>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+        {props.filters.map((filter) => (
+          <Pressable
+            key={filter}
+            style={[styles.filterChip, props.activeFilter === filter && styles.filterChipActive]}
+            onPress={() => props.onFilter(filter)}
+          >
+            <Text style={[styles.filterText, props.activeFilter === filter && styles.filterTextActive]}>{filter}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      {props.hotspots.map((hotspot, index) => (
+        <Pressable
+          key={hotspot.name}
+          style={[styles.hotspotRow, props.selectedHotspot === hotspot.name && styles.hotspotRowSelected]}
+          onPress={() => props.onSelect(hotspot.name)}
+        >
+          <View style={[styles.hotspotPreview, hotspot.tone === "warm" && styles.hotspotPreviewWarm]}>
+            <Text style={styles.hotspotPreviewText}>{index + 1}</Text>
+          </View>
+          <View style={styles.profileCopy}>
+            <Text style={styles.profileName}>{hotspot.name}</Text>
+            <Text style={[styles.hotspotStatus, hotspot.tone === "warm" && styles.hotspotStatusWarm]}>{hotspot.status}</Text>
+            <Text style={styles.caption}>{hotspot.distance}</Text>
+          </View>
+          <View style={styles.hotspotPeople}>
+            <Text style={styles.hotspotPeopleIcon}>2</Text>
+            <Text style={styles.hotspotPeopleText}>{hotspot.people}</Text>
+          </View>
+        </Pressable>
+      ))}
+    </>
+  );
+}
+
 function ProfilePhoto(props: { profile: typeof demoProfiles[number]; style: StyleProp<ViewStyle>; imageStyle: StyleProp<ImageStyle> }) {
   return (
     <View style={props.style}>
@@ -1196,7 +1281,7 @@ function ProfilePhoto(props: { profile: typeof demoProfiles[number]; style: Styl
   );
 }
 
-function DiscoverCard(props: { profile: typeof demoProfiles[number]; remaining: number; pulse: Animated.Value }) {
+function DiscoverCard(props: { profile: typeof demoProfiles[number]; remaining: number; pulse: Animated.Value; hotspot: string }) {
   const lift = props.pulse.interpolate({
     inputRange: [0, 1],
     outputRange: [0, -4],
@@ -1208,7 +1293,7 @@ function DiscoverCard(props: { profile: typeof demoProfiles[number]; remaining: 
         <Image source={props.profile.photo} style={styles.discoverImage} resizeMode="cover" />
         <View style={styles.photoFrame} />
         <View style={styles.hotspotBadge}>
-          <Text style={styles.hotspotBadgeText}>Nearby now</Text>
+          <Text style={styles.hotspotBadgeText}>{props.hotspot}</Text>
         </View>
       </View>
       <View style={styles.discoverCopy}>
@@ -1450,6 +1535,24 @@ const styles = StyleSheet.create({
   eyePupilOff: { backgroundColor: "#777777" },
   eyeSlash: { position: "absolute", width: 30, height: 2, borderRadius: 999, backgroundColor: "#777777", transform: [{ rotate: "-32deg" }] },
   invisibleState: { minHeight: 320, backgroundColor: theme.elevated, borderRadius: 24, padding: 24, alignItems: "center", justifyContent: "center", gap: 14, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 14, shadowOffset: { width: 0, height: 7 }, elevation: 1 },
+  hotspotHero: { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: theme.elevated, borderRadius: 24, padding: 18, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 2 },
+  hotspotPin: { width: 54, height: 54, borderRadius: 20, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center" },
+  hotspotPinText: { color: theme.accentDark, fontSize: 22, fontWeight: "900" },
+  filterRow: { gap: 8, paddingRight: 16 },
+  filterChip: { height: 34, borderRadius: 999, backgroundColor: theme.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, paddingHorizontal: 14, alignItems: "center", justifyContent: "center" },
+  filterChipActive: { backgroundColor: theme.accent },
+  filterText: { color: theme.muted, fontSize: 13, fontWeight: "700" },
+  filterTextActive: { color: "#fff" },
+  hotspotRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: theme.elevated, borderRadius: 20, padding: 12, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 1 },
+  hotspotRowSelected: { borderWidth: 1.5, borderColor: "#c8b6ff" },
+  hotspotPreview: { width: 78, height: 78, borderRadius: 18, backgroundColor: "#eee7ff", alignItems: "center", justifyContent: "center" },
+  hotspotPreviewWarm: { backgroundColor: "#fff1dc" },
+  hotspotPreviewText: { color: theme.accentDark, fontSize: 24, fontWeight: "900" },
+  hotspotStatus: { color: theme.distanceText, fontSize: 13, fontWeight: "700" },
+  hotspotStatusWarm: { color: "#d68621" },
+  hotspotPeople: { alignItems: "center", gap: 3 },
+  hotspotPeopleIcon: { color: theme.accent, fontSize: 11, fontWeight: "900" },
+  hotspotPeopleText: { color: theme.muted, fontSize: 12, fontWeight: "800" },
   profileRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: theme.elevated, borderRadius: 18, padding: 13, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 1 },
   avatar: { width: 58, height: 58, borderRadius: 20, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   smallAvatar: { width: 42, height: 42, borderRadius: 15, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center", overflow: "hidden" },
