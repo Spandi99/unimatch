@@ -5,12 +5,14 @@ export function getAuthRedirectUrl() {
   if (configuredUrl) return configuredUrl;
 
   if (Platform.OS === "web" && typeof window !== "undefined") {
-    return `${window.location.origin}/auth/callback`;
+    return `${window.location.origin}/auth-callback.html`;
   }
 
-  return "unimatch://auth/callback";
+  return "http://localhost:8081/auth-callback.html";
 }
 
 export function isAuthCallbackUrl(url: string) {
-  return url.includes("/auth/callback") || url.startsWith("unimatch://auth/callback");
+  return url.includes("/auth/callback")
+    || url.includes("/auth-callback.html")
+    || url.startsWith("unimatch://auth/callback");
 }

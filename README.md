@@ -47,17 +47,17 @@ In Supabase, open `Authentication` -> `URL Configuration` and set:
 
 - Site URL: `http://localhost:8081`
 - Redirect URLs:
-  - `http://localhost:8081/auth/callback`
-  - `http://YOUR_PC_LAN_IP:8081/auth/callback`
+  - `http://localhost:8789/auth-callback.html`
+  - `http://YOUR_PC_LAN_IP:8789/auth-callback.html`
   - `unimatch://auth/callback`
 
 For iPhone testing with Expo Go, set this in `.env` before starting the app:
 
 ```powershell
-EXPO_PUBLIC_AUTH_REDIRECT_URL=http://YOUR_PC_LAN_IP:8081/auth/callback
+EXPO_PUBLIC_AUTH_REDIRECT_URL=http://YOUR_PC_LAN_IP:8789/auth-callback.html
 ```
 
-Replace `YOUR_PC_LAN_IP` with the LAN address shown by Expo, for example `192.168.1.42`. When the email opens this page, UniMatch confirms the Supabase code or shows a clear message to return to the app and sign in.
+Replace `YOUR_PC_LAN_IP` with the LAN address shown by Expo, for example `192.168.1.42`. The helper script starts a tiny confirmation page on port `8789`, so the email link opens a normal page instead of the Expo Metro server.
 
 ## Expo SDK
 
@@ -108,6 +108,7 @@ Best options:
 The development helper starts:
 
 - OCR worker on `localhost:8788`
+- email confirmation page on `localhost:8789`
 - ngrok tunnel for Supabase to reach OCR
 - Expo web server on `localhost:8081`
 

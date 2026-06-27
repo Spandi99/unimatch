@@ -9,6 +9,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $ocrWorker = Join-Path $root "ocr-worker"
 $npmCache = Join-Path $root ".npm-cache"
+$authCallbackScript = Join-Path $root "scripts\auth-callback-server.js"
 $ngrokCommand = if (Get-Command "ngrok" -ErrorAction SilentlyContinue) { "ngrok http 8788" } else { "npx.cmd ngrok http 8788" }
 $expoCommand = if ($ExpoMode -eq "lan") { "npx.cmd expo start --host lan --port 8081 --clear" } else { "npx.cmd expo start --web --port 8081 --clear" }
 
@@ -41,6 +42,12 @@ Start-DevWindow `
 Start-Sleep -Seconds 2
 
 Start-DevWindow `
+  -Title "Auth callback page" `
+  -Command "cd `"$root`"; node `"$authCallbackScript`""
+
+Start-Sleep -Seconds 2
+
+Start-DevWindow `
   -Title "ngrok" `
   -Command $ngrokCommand
 
@@ -61,4 +68,5 @@ Write-Host "1. Copy the https://...ngrok-free.app forwarding URL from the ngrok 
 Write-Host "2. Set it in Supabase as LEGI_OCR_SERVICE_URL."
 Write-Host "3. If review-legi changed, deploy it with: npx.cmd supabase functions deploy review-legi"
 Write-Host "4. For iPhone/Android through Expo Go, run: .\scripts\start-dev.ps1 -ExpoMode lan"
+Write-Host "5. Email confirmation page runs on http://localhost:8789/auth-callback.html"
 Write-Host ""

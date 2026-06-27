@@ -243,6 +243,11 @@ export default function App() {
         : await signUpWithEmail(email.trim(), password, getAuthRedirectUrl());
 
       if (result.error) {
+        if (mode === "sign-up" && shouldResendConfirmationAfterSignUpError(result.error.message)) {
+          await resendConfirmationForEmail(email.trim());
+          return;
+        }
+
         setAuthMessage(result.error.message);
         Alert.alert("Authentication failed", result.error.message);
         return;
@@ -282,10 +287,7 @@ export default function App() {
     setAuthMessage("");
     setIsAuthenticating(true);
     try {
-      const result = await resendConfirmationEmail(targetEmail, getAuthRedirectUrl());
-      if (result.error) throw result.error;
-      setPendingConfirmationEmail(targetEmail);
-      setAuthMessage("Confirmation email sent again. Check your inbox and spam folder.");
+      await resendConfirmationForEmail(targetEmail);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not resend confirmation email.";
       setAuthMessage(message);
@@ -293,6 +295,22 @@ export default function App() {
     } finally {
       setIsAuthenticating(false);
     }
+  }
+
+  async function resendConfirmationForEmail(targetEmail: string) {
+    const result = await resendConfirmationEmail(targetEmail, getAuthRedirectUrl());
+    if (result.error) throw result.error;
+    setPendingConfirmationEmail(targetEmail);
+    setAuthMessage("Confirmation email sent again. Check your inbox and spam folder.");
+    Alert.alert("Confirmation email sent", "Check your inbox and spam folder, then come back and sign in.");
+  }
+
+  function shouldResendConfirmationAfterSignUpError(message: string) {
+    const normalized = message.toLowerCase();
+    return normalized.includes("already")
+      || normalized.includes("registered")
+      || normalized.includes("exists")
+      || normalized.includes("user");
   }
 
   async function chooseProfilePhoto() {
