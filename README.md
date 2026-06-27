@@ -39,6 +39,18 @@ npm run start
 
 Use Expo Go or a development build to run it on iPhone and Android.
 
+## Expo SDK
+
+This project targets Expo SDK 54 for compatibility with the current Expo Go app.
+
+After pulling SDK changes, refresh local dependencies:
+
+```powershell
+$env:NPM_CONFIG_CACHE="C:\Users\spand\Documents\Codex\2026-06-25\ic\unimatch\.npm-cache"
+$env:NPM_CONFIG_STRICT_SSL="false"
+npm.cmd install --no-audit --no-fund
+```
+
 ## Mobile testing
 
 Fastest real-device loop:
