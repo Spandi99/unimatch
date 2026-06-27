@@ -135,6 +135,11 @@ create policy "users upload own profile photo"
   to authenticated
   with check (bucket_id = 'profile-photos' and (storage.foldername(name))[1] = auth.uid()::text);
 
+create policy "users read own profile photo"
+  on storage.objects for select
+  to authenticated
+  using (bucket_id = 'profile-photos' and (storage.foldername(name))[1] = auth.uid()::text);
+
 create policy "users update own profile photo"
   on storage.objects for update
   to authenticated
@@ -145,6 +150,11 @@ create policy "users upload own verification document"
   on storage.objects for insert
   to authenticated
   with check (bucket_id = 'verification-documents' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "users read own verification document"
+  on storage.objects for select
+  to authenticated
+  using (bucket_id = 'verification-documents' and (storage.foldername(name))[1] = auth.uid()::text);
 
 create policy "users update own verification document"
   on storage.objects for update

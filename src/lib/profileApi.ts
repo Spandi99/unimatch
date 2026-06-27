@@ -23,9 +23,9 @@ export async function sendMagicLink(email: string) {
 }
 
 export async function saveProfile(userId: string, draft: ProfileDraft) {
-  const photoPath = await uploadProfilePhoto(userId, draft.photoUri);
+  const photoPath = await withStage("profile photo upload", () => uploadProfilePhoto(userId, draft.photoUri));
 
-  return supabase.from("profiles").upsert({
+  const result = await supabase.from("profiles").upsert({
     id: userId,
     name: draft.name,
     birthdate: draft.birthdate,
@@ -36,17 +36,23 @@ export async function saveProfile(userId: string, draft: ProfileDraft) {
     bio: draft.bio ?? "",
     photo_path: photoPath,
   });
+
+  if (result.error) throw new Error(`profile save failed: ${result.error.message}`);
+  return result;
 }
 
 export async function createVerificationRequest(userId: string, legiUri: string) {
-  const legiDocumentPath = await uploadVerificationDocument(userId, legiUri);
+  const legiDocumentPath = await withStage("Legi photo upload", () => uploadVerificationDocument(userId, legiUri));
 
-  return supabase.from("verification_requests").insert({
+  const result = await supabase.from("verification_requests").insert({
     user_id: userId,
     method: "legi_card",
     status: "pending",
     legi_document_path: legiDocumentPath,
   });
+
+  if (result.error) throw new Error(`Legi review request failed: ${result.error.message}`);
+  return result;
 }
 
 export async function sendMessageRequest(recipientId: string, note: string) {
@@ -61,11 +67,11 @@ export async function sendMessageRequest(recipientId: string, note: string) {
 }
 
 async function uploadProfilePhoto(userId: string, photoUri: string) {
-  return uploadImage("profile-photos", `${userId}/profile.jpg`, photoUri);
+  return uploadImage("profile-photos", `${userId}/profile-${Date.now()}.jpg`, photoUri);
 }
 
 async function uploadVerificationDocument(userId: string, photoUri: string) {
-  return uploadImage("verification-documents", `${userId}/legi.jpg`, photoUri);
+  return uploadImage("verification-documents", `${userId}/legi-${Date.now()}.jpg`, photoUri);
 }
 
 async function uploadImage(bucket: string, path: string, photoUri: string) {
@@ -75,10 +81,10 @@ async function uploadImage(bucket: string, path: string, photoUri: string) {
     .from(bucket)
     .upload(path, imageBody, {
       contentType: "image/jpeg",
-      upsert: true,
+      upsert: false,
     });
 
-  if (error) throw error;
+  if (error) throw new Error(`${bucket} upload failed: ${error.message}`);
   return path;
 }
 
@@ -94,4 +100,13 @@ async function readImageBody(photoUri: string) {
   });
 
   return decode(base64);
+}
+
+async function withStage<T>(stage: string, action: () => Promise<T>) {
+  try {
+    return await action();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    throw new Error(`${stage} failed: ${message}`);
+  }
 }
