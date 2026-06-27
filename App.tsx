@@ -229,7 +229,7 @@ export default function App() {
                 <Chip
                   key={option}
                   selected={draft.wantsToMeet.includes(option)}
-                  label={option.replaceAll("_", " ")}
+                  label={option.replace(/_/g, " ")}
                   onPress={() => setDraft({ ...draft, wantsToMeet: option === "everyone" ? ["everyone"] : [option] })}
                 />
               ))}
