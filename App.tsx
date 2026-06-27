@@ -1,10 +1,13 @@
 import * as ImagePicker from "expo-image-picker";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   Alert,
+  Animated,
+  Easing,
   Image,
+  ImageSourcePropType,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -15,6 +18,9 @@ import {
   Text,
   TextInput,
   View,
+  type ImageStyle,
+  type StyleProp,
+  type ViewStyle,
 } from "react-native";
 
 import { theme } from "./src/components/Theme";
@@ -45,11 +51,17 @@ const genderOptions: Array<{ label: string; value: GenderIdentity }> = [
 ];
 
 const meetOptions = ["women", "men", "non_binary_people", "everyone"];
+const profileImages = [
+  require("./Mockbilder/PB1.png"),
+  require("./Mockbilder/PB2.png"),
+  require("./Mockbilder/PB3.png"),
+  require("./Mockbilder/PB4.png"),
+] as ImageSourcePropType[];
 const demoProfiles = [
-  { initials: "SK", name: "Sophie", age: 24, uni: "University of Bern", degree: "Medicine", distance: "~120m", place: "Unitobler library", bio: "Running, cooking, and cinema. Usually studying near the anatomy floor." },
-  { initials: "NF", name: "Nina", age: 22, uni: "BFH", degree: "Design", distance: "~200m", place: "Bern main library", bio: "Illustration, yoga, and collecting too many houseplants." },
-  { initials: "MR", name: "Marco", age: 26, uni: "University of Bern", degree: "Architecture", distance: "~350m", place: "Muesmatt campus", bio: "Photography, cycling, strong opinions about fonts." },
-  { initials: "LB", name: "Lena", age: 23, uni: "PHBern", degree: "Education", distance: "~470m", place: "PHBern cafe", bio: "Reading too much, hiking when not reading." },
+  { initials: "SK", name: "Sophie", age: 24, uni: "University of Bern", degree: "Medicine", distance: "~120m", place: "Unitobler library", bio: "Running, cooking, and cinema. Usually studying near the anatomy floor.", photo: profileImages[0] },
+  { initials: "NF", name: "Nina", age: 22, uni: "BFH", degree: "Design", distance: "~200m", place: "Bern main library", bio: "Illustration, yoga, and collecting too many houseplants.", photo: profileImages[1] },
+  { initials: "MR", name: "Marco", age: 26, uni: "University of Bern", degree: "Architecture", distance: "~350m", place: "Muesmatt campus", bio: "Photography, cycling, strong opinions about fonts.", photo: profileImages[2] },
+  { initials: "LB", name: "Lena", age: 23, uni: "PHBern", degree: "Education", distance: "~470m", place: "PHBern cafe", bio: "Reading too much, hiking when not reading.", photo: profileImages[3] },
 ];
 const appTabs = ["Nearby", "Discover", "Matches", "Profile"];
 const rememberMeKey = "unimatch.rememberMe";
@@ -113,6 +125,7 @@ export default function App() {
   const [requestProfile, setRequestProfile] = useState<number | null>(null);
   const [requestDraft, setRequestDraft] = useState("");
   const [discoverQueue, setDiscoverQueue] = useState(demoProfiles.map((_, index) => index));
+  const [outgoingRequests, setOutgoingRequests] = useState<Array<{ profile: typeof demoProfiles[number]; note: string; time: string }>>([]);
   const [chatIndex, setChatIndex] = useState<number | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileSaveMessage, setProfileSaveMessage] = useState("");
@@ -136,6 +149,7 @@ export default function App() {
 
   const canFinish = Boolean(draft.name.trim() && draft.birthdate && draft.photoUri && draft.legiUri);
   const currentDiscoverIndex = discoverQueue[0] ?? null;
+  const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     function handleUrl(url: string | null) {
@@ -209,6 +223,28 @@ export default function App() {
       authListener.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 1200,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: 900,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    animation.start();
+    return () => animation.stop();
+  }, [pulse]);
 
   async function completeEmailConfirmation(url: string) {
     setCallbackMessage("Confirming your email...");
@@ -916,11 +952,14 @@ export default function App() {
                     return;
                   }
                   Alert.alert("Request sent", "The chat opens only if they accept.");
+                  setOutgoingRequests((current) => [
+                    { profile: demoProfiles[requestProfile], note: requestDraft.trim(), time: "now" },
+                    ...current,
+                  ]);
                   setDiscoverQueue((current) => current.filter((profileIndex) => profileIndex !== requestProfile));
                   setRequestProfile(null);
                   setSelectedProfile(null);
                   setRequestDraft("");
-                  setAppTab(2);
                 }}
               />
             ) : selectedProfile !== null ? (
@@ -960,7 +999,7 @@ export default function App() {
                       </View>
                       {demoProfiles.map((profile, index) => (
                         <Pressable key={profile.name} style={styles.profileRow} onPress={() => setSelectedProfile(index)}>
-                          <View style={styles.avatar}><Text style={styles.avatarText}>{profile.initials}</Text></View>
+                          <ProfilePhoto profile={profile} style={styles.avatar} imageStyle={styles.avatarImage} />
                           <View style={styles.profileCopy}>
                             <Text style={styles.profileName}>{profile.name}, {profile.age}</Text>
                             <Text style={styles.caption}>{profile.place}</Text>
@@ -980,7 +1019,7 @@ export default function App() {
                         <EmptyDiscover onReset={() => setDiscoverQueue(demoProfiles.map((_, index) => index))} />
                       ) : (
                         <>
-                          <DiscoverCard profile={demoProfiles[currentDiscoverIndex]} remaining={discoverQueue.length} />
+                          <DiscoverCard profile={demoProfiles[currentDiscoverIndex]} remaining={discoverQueue.length} pulse={pulse} />
                           <View style={styles.discoverActions}>
                             <Pressable style={styles.passButton} onPress={() => passDiscoverProfile(currentDiscoverIndex)}>
                               <Text style={styles.passButtonText}>Pass</Text>
@@ -995,10 +1034,37 @@ export default function App() {
                   )}
                   {appTab === 2 && (
                     <>
+                      <Text style={styles.heading}>Open requests</Text>
+                      {outgoingRequests.length === 0 ? (
+                        <View style={styles.requestCard}>
+                          <Text style={styles.profileName}>No open requests</Text>
+                          <Text style={styles.caption}>Requests you send from Nearby or Discover will stay here until accepted.</Text>
+                        </View>
+                      ) : (
+                        outgoingRequests.map((request) => (
+                          <View key={`${request.profile.name}-${request.time}-${request.note}`} style={styles.requestCard}>
+                            <View style={styles.requestHeader}>
+                              <ProfilePhoto profile={request.profile} style={styles.smallAvatar} imageStyle={styles.avatarImage} />
+                              <View style={styles.profileCopy}>
+                                <Text style={styles.profileName}>{request.profile.name}</Text>
+                                <Text style={styles.caption}>Waiting for reply - {request.time}</Text>
+                              </View>
+                              <Text style={styles.pendingPill}>Pending</Text>
+                            </View>
+                            <Text style={styles.caption}>{request.note}</Text>
+                          </View>
+                        ))
+                      )}
                       <Text style={styles.heading}>Message requests</Text>
                       {incomingRequests.map((request, index) => (
                         <View key={`${request.profile.name}-${request.time}`} style={styles.requestCard}>
-                          <Text style={styles.profileName}>{request.profile.name}</Text>
+                          <View style={styles.requestHeader}>
+                            <ProfilePhoto profile={request.profile} style={styles.smallAvatar} imageStyle={styles.avatarImage} />
+                            <View style={styles.profileCopy}>
+                              <Text style={styles.profileName}>{request.profile.name}</Text>
+                              <Text style={styles.caption}>{request.time}</Text>
+                            </View>
+                          </View>
                           <Text style={styles.caption}>{request.note}</Text>
                           <View style={styles.actionRow}>
                             <Pressable style={styles.outlineSmall} onPress={() => setIncomingRequests((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
@@ -1020,7 +1086,7 @@ export default function App() {
                       <Text style={styles.heading}>Chats</Text>
                       {matches.map((match, index) => (
                         <Pressable key={match.profile.name} style={styles.profileRow} onPress={() => setChatIndex(index)}>
-                          <View style={styles.avatar}><Text style={styles.avatarText}>{match.profile.initials}</Text></View>
+                          <ProfilePhoto profile={match.profile} style={styles.avatar} imageStyle={styles.avatarImage} />
                           <View style={styles.profileCopy}>
                             <Text style={styles.profileName}>{match.profile.name}</Text>
                             <Text style={styles.caption}>{match.messages[match.messages.length - 1]?.text}</Text>
@@ -1084,11 +1150,28 @@ function ReviewRow(props: { label: string; value: boolean | null | undefined }) 
   );
 }
 
-function DiscoverCard(props: { profile: typeof demoProfiles[number]; remaining: number }) {
+function ProfilePhoto(props: { profile: typeof demoProfiles[number]; style: StyleProp<ViewStyle>; imageStyle: StyleProp<ImageStyle> }) {
   return (
-    <View style={styles.discoverCard}>
+    <View style={props.style}>
+      <Image source={props.profile.photo} style={props.imageStyle} resizeMode="cover" />
+    </View>
+  );
+}
+
+function DiscoverCard(props: { profile: typeof demoProfiles[number]; remaining: number; pulse: Animated.Value }) {
+  const lift = props.pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -4],
+  });
+
+  return (
+    <Animated.View style={[styles.discoverCard, { transform: [{ translateY: lift }] }]}>
       <View style={styles.discoverPhoto}>
-        <Text style={styles.bigAvatarText}>{props.profile.initials}</Text>
+        <Image source={props.profile.photo} style={styles.discoverImage} resizeMode="cover" />
+        <View style={styles.photoFrame} />
+        <View style={styles.hotspotBadge}>
+          <Text style={styles.hotspotBadgeText}>Nearby now</Text>
+        </View>
       </View>
       <View style={styles.discoverCopy}>
         <View style={styles.discoverNameRow}>
@@ -1103,7 +1186,7 @@ function DiscoverCard(props: { profile: typeof demoProfiles[number]; remaining: 
         <Text style={styles.bioText}>{props.profile.bio}</Text>
         <Text style={styles.placeText}>{props.profile.place}</Text>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -1131,11 +1214,16 @@ function ProfileDetail(props: { profile: typeof demoProfiles[number]; onBack: ()
         <Text style={styles.backText}>Back to Nearby</Text>
       </Pressable>
       <View style={styles.discoverCard}>
-        <View style={styles.bigAvatar}><Text style={styles.bigAvatarText}>{props.profile.initials}</Text></View>
-        <Text style={styles.title}>{props.profile.name}, {props.profile.age}</Text>
-        <Text style={styles.caption}>{props.profile.uni} - {props.profile.degree}</Text>
-        <Text style={styles.caption}>{props.profile.place} - {props.profile.distance}</Text>
-        <Text style={styles.caption}>{props.profile.bio}</Text>
+        <View style={styles.discoverPhoto}>
+          <Image source={props.profile.photo} style={styles.discoverImage} resizeMode="cover" />
+          <View style={styles.photoFrame} />
+        </View>
+        <View style={styles.discoverCopy}>
+          <Text style={styles.discoverName}>{props.profile.name}, {props.profile.age}</Text>
+          <Text style={styles.caption}>{props.profile.uni} - {props.profile.degree}</Text>
+          <Text style={styles.caption}>{props.profile.place} - {props.profile.distance}</Text>
+          <Text style={styles.bioText}>{props.profile.bio}</Text>
+        </View>
       </View>
       <Pressable style={styles.cta} onPress={props.onRequest}>
         <Text style={styles.ctaText}>Send message request</Text>
@@ -1151,7 +1239,7 @@ function RequestComposer(props: { profile: typeof demoProfiles[number]; draft: s
         <Text style={styles.backText}>Back to Profile</Text>
       </Pressable>
       <View style={styles.profileHeader}>
-        <View style={styles.avatar}><Text style={styles.avatarText}>{props.profile.initials}</Text></View>
+        <ProfilePhoto profile={props.profile} style={styles.avatar} imageStyle={styles.avatarImage} />
         <Text style={styles.titleLeft}>Message {props.profile.name}</Text>
         <Text style={styles.caption}>Write a short request. If they accept, the chat opens.</Text>
       </View>
@@ -1315,7 +1403,9 @@ const styles = StyleSheet.create({
   livePill: { backgroundColor: "#ecfdf3", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   livePillText: { color: "#067647", fontSize: 12, fontWeight: "700" },
   profileRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: theme.elevated, borderRadius: 18, padding: 13, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 1 },
-  avatar: { width: 58, height: 58, borderRadius: 20, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center" },
+  avatar: { width: 58, height: 58, borderRadius: 20, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  smallAvatar: { width: 42, height: 42, borderRadius: 15, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  avatarImage: { width: "100%", height: "100%" },
   avatarText: { color: theme.tagText, fontSize: 20, fontWeight: "700" },
   profileCopy: { flex: 1, gap: 2 },
   profileName: { color: theme.text, fontSize: 16, fontWeight: "600" },
@@ -1334,7 +1424,11 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
   metaPill: { alignSelf: "flex-start", backgroundColor: theme.surface, color: theme.text, borderRadius: 999, overflow: "hidden", paddingHorizontal: 10, paddingVertical: 5, fontSize: 12, fontWeight: "700" },
   discoverCard: { minHeight: 452, backgroundColor: theme.elevated, borderRadius: 24, overflow: "hidden", shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 24, shadowOffset: { width: 0, height: 14 }, elevation: 4 },
-  discoverPhoto: { height: 260, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center" },
+  discoverPhoto: { height: 260, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  discoverImage: { width: "100%", height: "100%" },
+  photoFrame: { position: "absolute", left: 12, right: 12, top: 12, bottom: 12, borderRadius: 20, borderWidth: 1, borderColor: "rgba(255,255,255,0.7)" },
+  hotspotBadge: { position: "absolute", left: 16, top: 16, borderRadius: 999, backgroundColor: "rgba(255,255,255,0.92)", paddingHorizontal: 11, paddingVertical: 6 },
+  hotspotBadgeText: { color: theme.text, fontSize: 12, fontWeight: "800" },
   discoverCopy: { padding: 18, gap: 10 },
   discoverNameRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   discoverName: { flex: 1, color: theme.text, fontSize: 24, fontWeight: "700" },
@@ -1355,6 +1449,8 @@ const styles = StyleSheet.create({
   emptyMark: { width: 64, height: 64, borderRadius: 22, backgroundColor: theme.surface, alignItems: "center", justifyContent: "center" },
   emptyMarkText: { color: theme.text, fontSize: 24, fontWeight: "800" },
   requestCard: { backgroundColor: theme.elevated, borderRadius: 18, padding: 14, gap: 10, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 1 },
+  requestHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
+  pendingPill: { alignSelf: "flex-start", backgroundColor: theme.surface, color: theme.muted, borderRadius: 999, overflow: "hidden", paddingHorizontal: 9, paddingVertical: 5, fontSize: 12, fontWeight: "800" },
   profileHeader: { alignItems: "center", gap: 8 },
   chatTitle: { padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.separator },
   chatTitleText: { textAlign: "center", fontSize: 16, fontWeight: "600", color: theme.text },
