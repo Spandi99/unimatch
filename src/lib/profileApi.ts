@@ -1,5 +1,6 @@
 import { decode } from "base64-arraybuffer";
 import * as FileSystem from "expo-file-system";
+import { Platform } from "react-native";
 
 import { supabase } from "./supabase";
 import { ProfileDraft } from "./types";
@@ -68,17 +69,29 @@ async function uploadVerificationDocument(userId: string, photoUri: string) {
 }
 
 async function uploadImage(bucket: string, path: string, photoUri: string) {
-  const base64 = await FileSystem.readAsStringAsync(photoUri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
+  const imageBody = await readImageBody(photoUri);
 
   const { error } = await supabase.storage
     .from(bucket)
-    .upload(path, decode(base64), {
+    .upload(path, imageBody, {
       contentType: "image/jpeg",
       upsert: true,
     });
 
   if (error) throw error;
   return path;
+}
+
+async function readImageBody(photoUri: string) {
+  if (Platform.OS === "web") {
+    const response = await fetch(photoUri);
+    if (!response.ok) throw new Error("Could not read selected image.");
+    return response.arrayBuffer();
+  }
+
+  const base64 = await FileSystem.readAsStringAsync(photoUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+
+  return decode(base64);
 }

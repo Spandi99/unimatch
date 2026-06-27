@@ -70,6 +70,9 @@ export default function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [authMessage, setAuthMessage] = useState("");
+  const [profileMessage, setProfileMessage] = useState("");
   const [showInstitutions, setShowInstitutions] = useState(false);
   const [draft, setDraft] = useState<ProfileDraft>({
     name: "",
@@ -82,7 +85,7 @@ export default function App() {
     bio: "",
   });
 
-  const canFinish = draft.name.trim() && draft.birthdate && draft.photoUri && draft.legiUri;
+  const canFinish = Boolean(draft.name.trim() && draft.birthdate && draft.photoUri && draft.legiUri);
 
   async function authenticate(mode: "sign-in" | "sign-up") {
     if (!email.trim() || !password) {
@@ -90,18 +93,36 @@ export default function App() {
       return;
     }
 
+    setAuthMessage("");
     setIsAuthenticating(true);
-    const result = mode === "sign-in"
-      ? await signInWithEmail(email.trim(), password)
-      : await signUpWithEmail(email.trim(), password);
-    setIsAuthenticating(false);
+    try {
+      const result = mode === "sign-in"
+        ? await signInWithEmail(email.trim(), password)
+        : await signUpWithEmail(email.trim(), password);
 
-    if (result.error) {
-      Alert.alert("Authentication failed", result.error.message);
-      return;
+      if (result.error) {
+        setAuthMessage(result.error.message);
+        Alert.alert("Authentication failed", result.error.message);
+        return;
+      }
+
+      const session = result.data.session ?? (await supabase.auth.getSession()).data.session;
+      if (!session) {
+        const message = "Account created, but email confirmation is still required. Confirm the email first, then sign in again.";
+        setAuthMessage(message);
+        Alert.alert("Confirm your email", message);
+        return;
+      }
+
+      setProfileMessage("");
+      setStep("onboarding");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown authentication error";
+      setAuthMessage(message);
+      Alert.alert("Authentication failed", message);
+    } finally {
+      setIsAuthenticating(false);
     }
-
-    setStep("onboarding");
   }
 
   async function chooseProfilePhoto() {
@@ -132,23 +153,34 @@ export default function App() {
   }
 
   async function finishProfile() {
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) {
-      Alert.alert("Not signed in", "Please sign in again.");
-      setStep("auth");
-      return;
-    }
-
+    setProfileMessage("");
+    setIsSubmitting(true);
     try {
-      const verification = await createVerificationRequest(data.user.id, draft.legiUri);
-      if (verification.error) throw verification.error;
+      let { data } = await supabase.auth.getUser();
+
+      if (!data.user && email.trim() && password) {
+        const signInResult = await signInWithEmail(email.trim(), password);
+        if (signInResult.error) throw signInResult.error;
+        data = (await supabase.auth.getUser()).data;
+      }
+
+      if (!data.user) {
+        throw new Error("You are not signed in. Please sign in again before submitting your Legi review.");
+      }
 
       const result = await saveProfile(data.user.id, draft);
       if (result.error) throw result.error;
 
+      const verification = await createVerificationRequest(data.user.id, draft.legiUri);
+      if (verification.error) throw verification.error;
+
       setStep("app");
     } catch (error) {
-      Alert.alert("Could not submit profile", error instanceof Error ? error.message : "Unknown error");
+      const message = error instanceof Error ? error.message : "Unknown error";
+      setProfileMessage(message);
+      Alert.alert("Could not submit profile", message);
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -185,6 +217,7 @@ export default function App() {
             <Pressable style={styles.outline} onPress={() => authenticate("sign-in")}>
               <Text style={styles.outlineText}>Sign in</Text>
             </Pressable>
+            {authMessage ? <Text style={styles.errorText}>{authMessage}</Text> : null}
           </ScrollView>
         )}
 
@@ -283,8 +316,9 @@ export default function App() {
               )}
             </Pressable>
 
-            <Pressable style={[styles.cta, !canFinish && styles.disabled]} disabled={!canFinish} onPress={finishProfile}>
-              <Text style={styles.ctaText}>Submit for review</Text>
+            {profileMessage ? <Text style={styles.errorText}>{profileMessage}</Text> : null}
+            <Pressable style={[styles.cta, (!canFinish || isSubmitting) && styles.disabled]} disabled={!canFinish || isSubmitting} onPress={finishProfile}>
+              <Text style={styles.ctaText}>{isSubmitting ? "Submitting..." : "Submit for review"}</Text>
             </Pressable>
           </ScrollView>
         )}
@@ -330,6 +364,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: "500", textAlign: "center" },
   heading: { fontSize: 16, fontWeight: "500" },
   caption: { color: theme.muted, fontSize: 13, lineHeight: 18 },
+  errorText: { color: "#b42318", fontSize: 13, lineHeight: 18, textAlign: "center" },
   input: { backgroundColor: theme.surface, borderRadius: theme.radius, paddingHorizontal: 12, paddingVertical: 12, fontSize: 16 },
   select: { backgroundColor: theme.surface, borderRadius: theme.radius, paddingHorizontal: 12, paddingVertical: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   selectText: { flex: 1, fontSize: 16, color: theme.text },
