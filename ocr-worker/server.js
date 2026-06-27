@@ -3,7 +3,8 @@ const { createWorker } = require("tesseract.js");
 
 const app = express();
 const port = Number(process.env.PORT || 8788);
-let workerPromise;
+let textWorkerPromise;
+let numberWorkerPromise;
 
 app.use(express.json({ limit: "12mb" }));
 
@@ -19,13 +20,18 @@ app.post("/ocr", async (request, response) => {
       return;
     }
 
-    const worker = await getWorker();
+    const textWorker = await getTextWorker();
+    const numberWorker = await getNumberWorker();
     const image = Buffer.from(imageBase64, "base64");
-    const result = await worker.recognize(image);
+    const [textResult, numberResult] = await Promise.all([
+      textWorker.recognize(image),
+      numberWorker.recognize(image),
+    ]);
 
     response.json({
-      text: result.data.text,
-      confidence: result.data.confidence,
+      text: textResult.data.text,
+      numberText: numberResult.data.text,
+      confidence: Math.max(textResult.data.confidence ?? 0, numberResult.data.confidence ?? 0),
     });
   } catch (error) {
     response.status(500).json({
@@ -38,9 +44,21 @@ app.listen(port, () => {
   console.log(`UniMatch OCR worker listening on ${port}`);
 });
 
-async function getWorker() {
-  if (!workerPromise) {
-    workerPromise = createWorker("eng+deu");
+async function getTextWorker() {
+  if (!textWorkerPromise) {
+    textWorkerPromise = createWorker("eng+deu");
   }
-  return workerPromise;
+  return textWorkerPromise;
+}
+
+async function getNumberWorker() {
+  if (!numberWorkerPromise) {
+    numberWorkerPromise = createWorker("eng+deu").then(async (worker) => {
+      await worker.setParameters({
+        tessedit_char_whitelist: "0123456789- ./",
+      });
+      return worker;
+    });
+  }
+  return numberWorkerPromise;
 }

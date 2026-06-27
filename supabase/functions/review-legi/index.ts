@@ -20,6 +20,7 @@ type AiLegiResult = {
 
 type OcrResponse = {
   text?: string;
+  numberText?: string;
   error?: string;
 };
 
@@ -259,10 +260,11 @@ async function analyzeLegiWithTesseract(
   const ocr = await response.json() as OcrResponse;
   if (ocr.error) throw new Error(`Tesseract OCR service failed: ${ocr.error}`);
 
-  const text = normalizeText(ocr.text ?? "");
-  const studentNumber = text.match(/\b[0-9]{2}-[0-9]{3}-[0-9]{3}\b/)?.[0] ?? null;
-  const hasBirthdate = Boolean(findBirthdate(text, profile?.birthdate ?? null));
-  const hasName = hasProfileName(text, profile?.name ?? null) || hasLikelyFullName(text);
+  const text = normalizeText([ocr.text, ocr.numberText].filter(Boolean).join(" "));
+  const studentNumber = extractStudentNumber(text);
+  const birthdate = findBirthdate(text, profile?.birthdate ?? null);
+  const hasBirthdate = Boolean(birthdate);
+  const hasName = hasProfileName(text, profile?.name ?? null) || hasLabeledName(text);
   const hasFaculty = hasFacultyText(text, profile?.degree ?? null, profile?.university ?? null);
   const passedCount = [imageSize > 0, hasBirthdate, hasName, hasFaculty, Boolean(studentNumber)].filter(Boolean).length;
 
@@ -274,12 +276,13 @@ async function analyzeLegiWithTesseract(
     has_student_number: Boolean(studentNumber),
     student_number: studentNumber,
     extracted_name: hasName ? profile?.name ?? null : null,
-    extracted_birthdate: hasBirthdate ? profile?.birthdate ?? null : null,
+    extracted_birthdate: birthdate,
     extracted_faculty: hasFaculty ? profile?.degree ?? profile?.university ?? null : null,
     confidence: Math.round((passedCount / 5) * 100) / 100,
     notes: [
       "Open-source Tesseract OCR review.",
       "Face photo is provisionally treated as passed when an image was uploaded; OCR cannot reliably verify a face.",
+      "OCR text combines a general text pass and a number-focused pass.",
       `OCR text: ${text.slice(0, 700)}`,
     ].join("\n"),
   };
@@ -334,6 +337,19 @@ function normalizeText(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function extractStudentNumber(text: string) {
+  const exact = text.match(/\b([0-9]{2})-([0-9]{3})-([0-9]{3})\b/);
+  if (exact) return `${exact[1]}-${exact[2]}-${exact[3]}`;
+
+  const separated = text.match(/(?:^|\D)([0-9]{2})[\s./-]+([0-9]{3})[\s./-]+([0-9]{3})(?:\D|$)/);
+  if (separated) return `${separated[1]}-${separated[2]}-${separated[3]}`;
+
+  const compact = text.match(/(?:^|\D)([0-9]{8})(?:\D|$)/);
+  if (compact) return `${compact[1].slice(0, 2)}-${compact[1].slice(2, 5)}-${compact[1].slice(5, 8)}`;
+
+  return null;
+}
+
 function findBirthdate(text: string, profileBirthdate: string | null) {
   if (profileBirthdate) {
     const [year, month, day] = profileBirthdate.split("-");
@@ -344,9 +360,15 @@ function findBirthdate(text: string, profileBirthdate: string | null) {
       `${day}-${month}-${year}`,
     ];
     if (candidates.some((candidate) => text.includes(candidate))) return profileBirthdate;
+
+    const dayPattern = Number(day).toString().padStart(1, "0");
+    const monthPattern = Number(month).toString().padStart(1, "0");
+    const dayMonthPattern = new RegExp(`\\b0?${dayPattern}[./-]0?${monthPattern}[./-][0-9]{4}\\b`);
+    const dayMonthMatch = text.match(dayMonthPattern);
+    if (dayMonthMatch) return dayMonthMatch[0];
   }
 
-  return text.match(/\b(?:[0-3]?\d[./-][01]?\d[./-](?:19|20)\d{2}|(?:19|20)\d{2}[./-][01]?\d[./-][0-3]?\d)\b/)?.[0] ?? null;
+  return text.match(/\b(?:[0-3]?\d[./-][01]?\d[./-][0-9]{4}|[0-9]{4}[./-][01]?\d[./-][0-3]?\d)\b/)?.[0] ?? null;
 }
 
 function hasProfileName(text: string, profileName: string | null) {
@@ -356,8 +378,8 @@ function hasProfileName(text: string, profileName: string | null) {
   return parts.length >= 2 && parts.every((part) => haystack.includes(part));
 }
 
-function hasLikelyFullName(text: string) {
-  return /\b[A-ZÄÖÜ][a-zäöüéèà]{2,}\s+[A-ZÄÖÜ][a-zäöüéèà]{2,}\b/.test(text);
+function hasLabeledName(text: string) {
+  return /\b(?:name|vorname|nachname|surname|student)\b[:\s]+[A-ZÄÖÜ][a-zäöüéèà]{2,}\s+[A-ZÄÖÜ][a-zäöüéèà]{2,}\b/i.test(text);
 }
 
 function hasFacultyText(text: string, degree: string | null, university: string | null) {

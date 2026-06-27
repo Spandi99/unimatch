@@ -1,6 +1,7 @@
 node_modules/
 .npm-cache/
 .expo/
+supabase/.temp/
 dist/
 build/
 .env
@@ -11,3 +12,4 @@ yarn-error.log*
 .DS_Store
 ios/
 android/
+ocr-worker/*.traineddata
