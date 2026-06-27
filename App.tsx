@@ -92,6 +92,7 @@ export default function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRefreshingReview, setIsRefreshingReview] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
+  const [pendingConfirmationEmail, setPendingConfirmationEmail] = useState("");
   const [profileMessage, setProfileMessage] = useState("");
   const [reviewMessage, setReviewMessage] = useState("");
   const [submitStage, setSubmitStage] = useState("");
@@ -145,6 +146,20 @@ export default function App() {
       console.warn(error);
       setIsBooting(false);
     });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) return;
+      AsyncStorage.setItem(rememberMeKey, rememberMe ? "true" : "false").catch(console.warn);
+      setPendingConfirmationEmail("");
+      routeAfterAuthentication(session.user.id).catch((error) => {
+        const message = error instanceof Error ? error.message : "Unknown authentication error";
+        setAuthMessage(message);
+      });
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   async function authenticate(mode: "sign-in" | "sign-up") {
@@ -168,13 +183,17 @@ export default function App() {
 
       const session = result.data.session ?? (await supabase.auth.getSession()).data.session;
       if (!session) {
-        const message = "Account created, but email confirmation is still required. Confirm the email first, then sign in again.";
+        const message = mode === "sign-up"
+          ? "Account created. Confirm the email we sent you, then tap Sign in."
+          : "No active session yet. If you just created this account, confirm the email first.";
+        setPendingConfirmationEmail(email.trim());
         setAuthMessage(message);
         Alert.alert("Confirm your email", message);
         return;
       }
 
       await AsyncStorage.setItem(rememberMeKey, rememberMe ? "true" : "false");
+      setPendingConfirmationEmail("");
       setProfileMessage("");
       await routeAfterAuthentication(session.user.id);
     } catch (error) {
@@ -383,8 +402,12 @@ export default function App() {
             </View>
 
             <View style={styles.section}>
-              <Text style={styles.title}>Create your account</Text>
-              <Text style={styles.caption}>Use a private email for login. Student status is checked with a Legi photo in the next step.</Text>
+              <Text style={styles.title}>{pendingConfirmationEmail ? "Confirm your email" : "Create your account"}</Text>
+              <Text style={styles.caption}>
+                {pendingConfirmationEmail
+                  ? `We sent a confirmation link to ${pendingConfirmationEmail}. Open it, then come back and sign in.`
+                  : "Use a private email for login. Student status is checked with a Legi photo in the next step."}
+              </Text>
             </View>
 
             <TextInput style={styles.input} placeholder="Email" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
@@ -399,8 +422,8 @@ export default function App() {
             <Pressable style={[styles.cta, isAuthenticating && styles.disabled]} disabled={isAuthenticating} onPress={() => authenticate("sign-up")}>
               <Text style={styles.ctaText}>{isAuthenticating ? "Working..." : "Create account"}</Text>
             </Pressable>
-            <Pressable style={styles.outline} onPress={() => authenticate("sign-in")}>
-              <Text style={styles.outlineText}>Sign in</Text>
+            <Pressable style={[styles.outline, isAuthenticating && styles.disabled]} disabled={isAuthenticating} onPress={() => authenticate("sign-in")}>
+              <Text style={styles.outlineText}>{pendingConfirmationEmail ? "I confirmed it - sign in" : "Sign in"}</Text>
             </Pressable>
             {authMessage ? <Text style={styles.errorText}>{authMessage}</Text> : null}
           </ScrollView>
