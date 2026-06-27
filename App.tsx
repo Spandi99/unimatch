@@ -112,6 +112,7 @@ export default function App() {
   const [selectedProfile, setSelectedProfile] = useState<number | null>(null);
   const [requestProfile, setRequestProfile] = useState<number | null>(null);
   const [requestDraft, setRequestDraft] = useState("");
+  const [discoverQueue, setDiscoverQueue] = useState(demoProfiles.map((_, index) => index));
   const [chatIndex, setChatIndex] = useState<number | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileSaveMessage, setProfileSaveMessage] = useState("");
@@ -134,6 +135,7 @@ export default function App() {
   });
 
   const canFinish = Boolean(draft.name.trim() && draft.birthdate && draft.photoUri && draft.legiUri);
+  const currentDiscoverIndex = discoverQueue[0] ?? null;
 
   useEffect(() => {
     function handleUrl(url: string | null) {
@@ -446,6 +448,15 @@ export default function App() {
       return "Email is confirmed, but the password does not match this account. Use the original password or request a password reset email.";
     }
     return message;
+  }
+
+  function passDiscoverProfile(index: number) {
+    setDiscoverQueue((current) => current.filter((profileIndex) => profileIndex !== index));
+  }
+
+  function openRequestForProfile(index: number) {
+    setRequestProfile(index);
+    setRequestDraft("");
   }
 
   async function chooseProfilePhoto() {
@@ -905,6 +916,7 @@ export default function App() {
                     return;
                   }
                   Alert.alert("Request sent", "The chat opens only if they accept.");
+                  setDiscoverQueue((current) => current.filter((profileIndex) => profileIndex !== requestProfile));
                   setRequestProfile(null);
                   setSelectedProfile(null);
                   setRequestDraft("");
@@ -940,7 +952,7 @@ export default function App() {
                       <View style={styles.homeHeader}>
                         <View>
                           <Text style={styles.titleLeft}>Nearby now</Text>
-                          <Text style={styles.caption}>Visible at enabled hotspots.</Text>
+                          <Text style={styles.caption}>People at active campus hotspots.</Text>
                         </View>
                         <View style={styles.livePill}>
                           <Text style={styles.livePillText}>Visible</Text>
@@ -951,34 +963,34 @@ export default function App() {
                           <View style={styles.avatar}><Text style={styles.avatarText}>{profile.initials}</Text></View>
                           <View style={styles.profileCopy}>
                             <Text style={styles.profileName}>{profile.name}, {profile.age}</Text>
-                            <Text style={styles.caption}>{profile.place} - {profile.distance}</Text>
-                            <Text style={styles.caption}>{profile.degree}</Text>
+                            <Text style={styles.caption}>{profile.place}</Text>
+                            <View style={styles.metaRow}>
+                              <Text style={styles.metaPill}>{profile.distance}</Text>
+                              <Text style={styles.metaPill}>{profile.degree}</Text>
+                            </View>
                           </View>
-                          <Text style={styles.chevron}>Next</Text>
+                          <Text style={styles.chevron}>&gt;</Text>
                         </Pressable>
                       ))}
                     </>
                   )}
                   {appTab === 1 && (
                     <>
-                      <View style={styles.discoverCard}>
-                        <View style={styles.bigAvatar}><Text style={styles.bigAvatarText}>{demoProfiles[2].initials}</Text></View>
-                        <Text style={styles.title}>{demoProfiles[2].name}, {demoProfiles[2].age}</Text>
-                        <Text style={styles.caption}>{demoProfiles[2].uni} - {demoProfiles[2].degree}</Text>
-                        <Text style={styles.caption}>{demoProfiles[2].bio}</Text>
-                      </View>
-                      <View style={styles.actionRow}>
-                        <Pressable style={styles.outlineSmall}><Text style={styles.outlineText}>Pass</Text></Pressable>
-                        <Pressable
-                          style={styles.ctaSmall}
-                          onPress={() => {
-                            setRequestProfile(2);
-                            setRequestDraft("");
-                          }}
-                        >
-                          <Text style={styles.ctaText}>Request</Text>
-                        </Pressable>
-                      </View>
+                      {currentDiscoverIndex === null ? (
+                        <EmptyDiscover onReset={() => setDiscoverQueue(demoProfiles.map((_, index) => index))} />
+                      ) : (
+                        <>
+                          <DiscoverCard profile={demoProfiles[currentDiscoverIndex]} remaining={discoverQueue.length} />
+                          <View style={styles.discoverActions}>
+                            <Pressable style={styles.passButton} onPress={() => passDiscoverProfile(currentDiscoverIndex)}>
+                              <Text style={styles.passButtonText}>Pass</Text>
+                            </Pressable>
+                            <Pressable style={styles.requestButtonLarge} onPress={() => openRequestForProfile(currentDiscoverIndex)}>
+                              <Text style={styles.requestButtonLargeText}>Request</Text>
+                            </Pressable>
+                          </View>
+                        </>
+                      )}
                     </>
                   )}
                   {appTab === 2 && (
@@ -1068,6 +1080,46 @@ function ReviewRow(props: { label: string; value: boolean | null | undefined }) 
     <View style={styles.reviewRow}>
       <Text style={styles.reviewLabel}>{props.label}</Text>
       <Text style={[styles.reviewValue, props.value === true && styles.reviewPassed, props.value === false && styles.reviewFailed]}>{marker}</Text>
+    </View>
+  );
+}
+
+function DiscoverCard(props: { profile: typeof demoProfiles[number]; remaining: number }) {
+  return (
+    <View style={styles.discoverCard}>
+      <View style={styles.discoverPhoto}>
+        <Text style={styles.bigAvatarText}>{props.profile.initials}</Text>
+      </View>
+      <View style={styles.discoverCopy}>
+        <View style={styles.discoverNameRow}>
+          <Text style={styles.discoverName}>{props.profile.name}, {props.profile.age}</Text>
+          <Text style={styles.stackCount}>{props.remaining} nearby</Text>
+        </View>
+        <Text style={styles.caption}>{props.profile.uni}</Text>
+        <View style={styles.metaRow}>
+          <Text style={styles.metaPill}>{props.profile.distance}</Text>
+          <Text style={styles.metaPill}>{props.profile.degree}</Text>
+        </View>
+        <Text style={styles.bioText}>{props.profile.bio}</Text>
+        <Text style={styles.placeText}>{props.profile.place}</Text>
+      </View>
+    </View>
+  );
+}
+
+function EmptyDiscover(props: { onReset: () => void }) {
+  return (
+    <View style={styles.emptyState}>
+      <View style={styles.emptyMark}>
+        <Text style={styles.emptyMarkText}>U</Text>
+      </View>
+      <Text style={styles.title}>No one nearby right now</Text>
+      <Text style={styles.caption}>
+        You have seen everyone available in this hotspot. Check back later or try another campus spot.
+      </Text>
+      <Pressable style={styles.outline} onPress={props.onReset}>
+        <Text style={styles.outlineText}>Reset demo stack</Text>
+      </Pressable>
     </View>
   );
 }
@@ -1203,11 +1255,11 @@ function ProfileTab(props: {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#fff" },
+  safe: { flex: 1, backgroundColor: "#fbfbf8" },
   flex: { flex: 1 },
   centerScreen: { flexGrow: 1, justifyContent: "center", padding: theme.screenPadding, gap: 18 },
   screen: { padding: theme.screenPadding, gap: 14 },
-  screenWithTabs: { padding: theme.screenPadding, paddingBottom: 92, gap: 14 },
+  screenWithTabs: { padding: theme.screenPadding, paddingBottom: 96, gap: 16 },
   brandRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
   brandIcon: { width: 28, height: 28, borderRadius: 10, backgroundColor: theme.accent, alignItems: "center", justifyContent: "center" },
   brandIconText: { color: "#fff", fontWeight: "600" },
@@ -1220,7 +1272,7 @@ const styles = StyleSheet.create({
   caption: { color: theme.muted, fontSize: 13, lineHeight: 18 },
   errorText: { color: "#b42318", fontSize: 13, lineHeight: 18, textAlign: "center" },
   progressText: { color: theme.muted, fontSize: 13, lineHeight: 18, textAlign: "center" },
-  input: { backgroundColor: theme.surface, borderRadius: theme.radius, paddingHorizontal: 12, paddingVertical: 12, fontSize: 16 },
+  input: { backgroundColor: "#fff", borderRadius: theme.radius, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, paddingHorizontal: 12, paddingVertical: 12, fontSize: 16 },
   select: { backgroundColor: theme.surface, borderRadius: theme.radius, paddingHorizontal: 12, paddingVertical: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   selectText: { flex: 1, fontSize: 16, color: theme.text },
   selectArrow: { fontSize: 13, fontWeight: "500", color: theme.accent },
@@ -1244,7 +1296,7 @@ const styles = StyleSheet.create({
   checkboxText: { color: "#fff", fontSize: 14, fontWeight: "700" },
   checkLabel: { color: theme.text, fontSize: 14 },
   disabled: { opacity: 0.45 },
-  photoBox: { height: 180, borderRadius: 16, backgroundColor: theme.surface, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  photoBox: { height: 180, borderRadius: 16, backgroundColor: "#fff", borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   photo: { width: "100%", height: "100%" },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: theme.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator },
@@ -1259,11 +1311,11 @@ const styles = StyleSheet.create({
   reviewValue: { color: theme.muted, fontSize: 13, fontWeight: "600" },
   reviewPassed: { color: "#067647" },
   reviewFailed: { color: "#b42318" },
-  homeHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 },
+  homeHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 2 },
   livePill: { backgroundColor: "#ecfdf3", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   livePillText: { color: "#067647", fontSize: 12, fontWeight: "700" },
-  profileRow: { flexDirection: "row", alignItems: "center", gap: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: theme.radius, padding: 12 },
-  avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center" },
+  profileRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#fff", borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: 14, padding: 12, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 1 },
+  avatar: { width: 56, height: 56, borderRadius: 18, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center" },
   avatarText: { color: theme.tagText, fontSize: 20, fontWeight: "700" },
   profileCopy: { flex: 1, gap: 2 },
   profileName: { color: theme.text, fontSize: 16, fontWeight: "600" },
@@ -1277,13 +1329,30 @@ const styles = StyleSheet.create({
   tabButton: { minWidth: 64, height: 44, alignItems: "center", justifyContent: "center" },
   tabText: { color: theme.muted, fontSize: 12, fontWeight: "600" },
   tabTextActive: { color: theme.accent },
-  chevron: { color: theme.muted, fontSize: 24 },
-  discoverCard: { minHeight: 330, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: 16, padding: 16, alignItems: "center", justifyContent: "center", gap: 10 },
+  chevron: { color: theme.muted, fontSize: 20, fontWeight: "700" },
+  metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
+  metaPill: { alignSelf: "flex-start", backgroundColor: theme.surface, color: theme.text, borderRadius: 999, overflow: "hidden", paddingHorizontal: 9, paddingVertical: 4, fontSize: 12, fontWeight: "600" },
+  discoverCard: { minHeight: 430, backgroundColor: "#fff", borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: 18, overflow: "hidden", shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 18, shadowOffset: { width: 0, height: 10 }, elevation: 3 },
+  discoverPhoto: { height: 245, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center" },
+  discoverCopy: { padding: 16, gap: 9 },
+  discoverNameRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  discoverName: { flex: 1, color: theme.text, fontSize: 24, fontWeight: "700" },
+  stackCount: { color: theme.distanceText, backgroundColor: theme.distanceBg, borderRadius: 999, overflow: "hidden", paddingHorizontal: 10, paddingVertical: 5, fontSize: 12, fontWeight: "700" },
+  bioText: { color: theme.text, fontSize: 15, lineHeight: 21 },
+  placeText: { color: theme.muted, fontSize: 13, fontWeight: "600" },
   bigAvatar: { width: 150, height: 150, borderRadius: 24, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center" },
-  bigAvatarText: { color: theme.tagText, fontSize: 42, fontWeight: "700" },
+  bigAvatarText: { color: theme.tagText, fontSize: 56, fontWeight: "800" },
   actionRow: { flexDirection: "row", gap: 10 },
   outlineSmall: { flex: 1, height: 42, borderRadius: theme.radius, borderWidth: 1.5, borderColor: theme.text, alignItems: "center", justifyContent: "center" },
   ctaSmall: { flex: 1, height: 42, borderRadius: theme.radius, backgroundColor: theme.text, alignItems: "center", justifyContent: "center" },
+  discoverActions: { flexDirection: "row", gap: 12 },
+  passButton: { flex: 1, height: 52, borderRadius: 999, backgroundColor: "#fff", borderWidth: 1.5, borderColor: theme.separator, alignItems: "center", justifyContent: "center" },
+  passButtonText: { color: theme.text, fontSize: 15, fontWeight: "700" },
+  requestButtonLarge: { flex: 1.25, height: 52, borderRadius: 999, backgroundColor: theme.text, alignItems: "center", justifyContent: "center" },
+  requestButtonLargeText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  emptyState: { minHeight: 360, backgroundColor: "#fff", borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: 18, padding: 22, alignItems: "center", justifyContent: "center", gap: 14 },
+  emptyMark: { width: 64, height: 64, borderRadius: 22, backgroundColor: theme.surface, alignItems: "center", justifyContent: "center" },
+  emptyMarkText: { color: theme.text, fontSize: 24, fontWeight: "800" },
   requestCard: { borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: theme.radius, padding: 12, gap: 10 },
   profileHeader: { alignItems: "center", gap: 8 },
   chatTitle: { padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.separator },
