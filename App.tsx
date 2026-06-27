@@ -52,6 +52,8 @@ const demoProfiles = [
 ];
 const appTabs = ["Nearby", "Discover", "Matches", "Profile"];
 const rememberMeKey = "unimatch.rememberMe";
+const pendingSignupEmailKey = "unimatch.pendingSignupEmail";
+const pendingSignupPasswordKey = "unimatch.pendingSignupPassword";
 const institutionGroups = [
   {
     title: "Universities in Bern",
@@ -86,7 +88,7 @@ const institutionGroups = [
 ];
 
 export default function App() {
-  const [step, setStep] = useState<"auth" | "auth-callback" | "onboarding" | "review" | "home">("auth");
+  const [step, setStep] = useState<"auth" | "confirm-email" | "auth-callback" | "onboarding" | "review" | "home">("auth");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
@@ -97,6 +99,8 @@ export default function App() {
   const [authMessage, setAuthMessage] = useState("");
   const [callbackMessage, setCallbackMessage] = useState("Confirming your email...");
   const [pendingConfirmationEmail, setPendingConfirmationEmail] = useState("");
+  const [pendingConfirmationPassword, setPendingConfirmationPassword] = useState("");
+  const [confirmationMessage, setConfirmationMessage] = useState("");
   const [profileMessage, setProfileMessage] = useState("");
   const [reviewMessage, setReviewMessage] = useState("");
   const [submitStage, setSubmitStage] = useState("");
@@ -151,6 +155,19 @@ export default function App() {
         return;
       }
 
+      const pendingEmail = await AsyncStorage.getItem(pendingSignupEmailKey);
+      const pendingPassword = await AsyncStorage.getItem(pendingSignupPasswordKey);
+      if (pendingEmail && pendingPassword) {
+        setEmail(pendingEmail);
+        setPassword(pendingPassword);
+        setPendingConfirmationEmail(pendingEmail);
+        setPendingConfirmationPassword(pendingPassword);
+        setConfirmationMessage("Open the confirmation email, then come back here. UniMatch will continue with the saved login details.");
+        setStep("confirm-email");
+        setIsBooting(false);
+        return;
+      }
+
       const savedRememberMe = await AsyncStorage.getItem(rememberMeKey);
       if (savedRememberMe === "false") {
         setRememberMe(false);
@@ -175,7 +192,9 @@ export default function App() {
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session?.user) return;
       AsyncStorage.setItem(rememberMeKey, rememberMe ? "true" : "false").catch(console.warn);
+      clearPendingSignup().catch(console.warn);
       setPendingConfirmationEmail("");
+      setPendingConfirmationPassword("");
       routeAfterAuthentication(session.user.id).catch((error) => {
         const message = error instanceof Error ? error.message : "Unknown authentication error";
         setAuthMessage(message);
@@ -230,7 +249,8 @@ export default function App() {
   }
 
   async function authenticate(mode: "sign-in" | "sign-up") {
-    if (!email.trim() || !password) {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !password) {
       Alert.alert("Missing details", "Enter your private email and password first.");
       return;
     }
@@ -239,12 +259,13 @@ export default function App() {
     setIsAuthenticating(true);
     try {
       const result = mode === "sign-in"
-        ? await signInWithEmail(email.trim(), password)
-        : await signUpWithEmail(email.trim(), password, getAuthRedirectUrl());
+        ? await signInWithEmail(normalizedEmail, password)
+        : await signUpWithEmail(normalizedEmail, password, getAuthRedirectUrl());
 
       if (result.error) {
         if (mode === "sign-up" && shouldResendConfirmationAfterSignUpError(result.error.message)) {
-          await resendConfirmationForEmail(email.trim());
+          await savePendingSignup(normalizedEmail, password);
+          await resendConfirmationForEmail(normalizedEmail, password);
           return;
         }
 
@@ -256,15 +277,21 @@ export default function App() {
       const session = result.data.session ?? (await supabase.auth.getSession()).data.session;
       if (!session) {
         const message = mode === "sign-up"
-          ? "Account created. Confirm the email we sent you, then tap Sign in."
+          ? "Account created. Confirm the email we sent you, then UniMatch will continue from here."
           : "No active session yet. If you just created this account, confirm the email first.";
-        setPendingConfirmationEmail(email.trim());
+        if (mode === "sign-up") {
+          await savePendingSignup(normalizedEmail, password);
+          setConfirmationMessage(message);
+          setStep("confirm-email");
+        }
+        setPendingConfirmationEmail(normalizedEmail);
         setAuthMessage(message);
         Alert.alert("Confirm your email", message);
         return;
       }
 
       await AsyncStorage.setItem(rememberMeKey, rememberMe ? "true" : "false");
+      await clearPendingSignup();
       setPendingConfirmationEmail("");
       setProfileMessage("");
       await routeAfterAuthentication(session.user.id);
@@ -278,31 +305,90 @@ export default function App() {
   }
 
   async function resendConfirmation() {
-    const targetEmail = pendingConfirmationEmail || email.trim();
+    const targetEmail = (pendingConfirmationEmail || email.trim()).toLowerCase();
     if (!targetEmail) {
       Alert.alert("Missing email", "Enter your email first.");
       return;
     }
 
     setAuthMessage("");
+    setConfirmationMessage("");
     setIsAuthenticating(true);
     try {
-      await resendConfirmationForEmail(targetEmail);
+      await resendConfirmationForEmail(targetEmail, pendingConfirmationPassword || password);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not resend confirmation email.";
       setAuthMessage(message);
+      setConfirmationMessage(message);
       Alert.alert("Could not resend email", message);
     } finally {
       setIsAuthenticating(false);
     }
   }
 
-  async function resendConfirmationForEmail(targetEmail: string) {
+  async function resendConfirmationForEmail(targetEmail: string, targetPassword?: string) {
     const result = await resendConfirmationEmail(targetEmail, getAuthRedirectUrl());
-    if (result.error) throw result.error;
+    if (result.error && targetPassword) {
+      const retry = await signUpWithEmail(targetEmail, targetPassword, getAuthRedirectUrl());
+      if (retry.error && !shouldResendConfirmationAfterSignUpError(retry.error.message)) throw retry.error;
+    } else if (result.error) {
+      throw result.error;
+    }
     setPendingConfirmationEmail(targetEmail);
+    setConfirmationMessage("Confirmation email sent again. Check your inbox and spam folder.");
     setAuthMessage("Confirmation email sent again. Check your inbox and spam folder.");
     Alert.alert("Confirmation email sent", "Check your inbox and spam folder, then come back and sign in.");
+  }
+
+  async function checkConfirmedAndContinue() {
+    const targetEmail = (pendingConfirmationEmail || email.trim()).toLowerCase();
+    const targetPassword = pendingConfirmationPassword || password;
+    if (!targetEmail || !targetPassword) {
+      setConfirmationMessage("The saved login details are missing. Go back and enter your email and password again.");
+      return;
+    }
+
+    setIsAuthenticating(true);
+    setConfirmationMessage("Checking confirmation...");
+    try {
+      const result = await signInWithEmail(targetEmail, targetPassword);
+      if (result.error) {
+        setConfirmationMessage(
+          result.error.message.toLowerCase().includes("email not confirmed")
+            ? "Email is not confirmed yet. Open the newest confirmation email, then tap the button again."
+            : result.error.message,
+        );
+        return;
+      }
+
+      const session = result.data.session ?? (await supabase.auth.getSession()).data.session;
+      if (!session?.user) {
+        setConfirmationMessage("Email confirmed, but no session was created yet. Try again in a moment.");
+        return;
+      }
+
+      await AsyncStorage.setItem(rememberMeKey, rememberMe ? "true" : "false");
+      await clearPendingSignup();
+      setPendingConfirmationEmail("");
+      setPendingConfirmationPassword("");
+      setConfirmationMessage("");
+      await routeAfterAuthentication(session.user.id);
+    } catch (error) {
+      setConfirmationMessage(error instanceof Error ? error.message : "Could not sign in after confirmation.");
+    } finally {
+      setIsAuthenticating(false);
+    }
+  }
+
+  async function savePendingSignup(targetEmail: string, targetPassword: string) {
+    setPendingConfirmationEmail(targetEmail);
+    setPendingConfirmationPassword(targetPassword);
+    await AsyncStorage.setItem(pendingSignupEmailKey, targetEmail);
+    await AsyncStorage.setItem(pendingSignupPasswordKey, targetPassword);
+  }
+
+  async function clearPendingSignup() {
+    await AsyncStorage.multiRemove([pendingSignupEmailKey, pendingSignupPasswordKey]);
   }
 
   function shouldResendConfirmationAfterSignUpError(message: string) {
@@ -539,6 +625,53 @@ export default function App() {
               </Pressable>
             ) : null}
             {authMessage ? <Text style={styles.errorText}>{authMessage}</Text> : null}
+          </ScrollView>
+        )}
+
+        {!isBooting && step === "confirm-email" && (
+          <ScrollView contentContainerStyle={styles.centerScreen}>
+            <View style={styles.brandRow}>
+              <View style={styles.brandIcon}>
+                <Text style={styles.brandIconText}>U</Text>
+              </View>
+              <Text style={styles.brand}>UniMatch</Text>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.title}>Confirm your email</Text>
+              <Text style={styles.caption}>
+                We sent a confirmation link to {pendingConfirmationEmail || email}. Open the newest email, then come back here.
+              </Text>
+            </View>
+
+            <View style={styles.notice}>
+              <Text style={styles.heading}>Next step</Text>
+              <Text style={styles.caption}>
+                UniMatch saved the login details for this signup flow and will continue to your profile setup after confirmation.
+              </Text>
+            </View>
+
+            <Pressable style={[styles.cta, isAuthenticating && styles.disabled]} disabled={isAuthenticating} onPress={checkConfirmedAndContinue}>
+              <Text style={styles.ctaText}>{isAuthenticating ? "Checking..." : "I confirmed my email"}</Text>
+            </Pressable>
+            <Pressable style={styles.outline} disabled={isAuthenticating} onPress={resendConfirmation}>
+              <Text style={styles.outlineText}>Send confirmation email again</Text>
+            </Pressable>
+            <Pressable
+              style={styles.textButton}
+              disabled={isAuthenticating}
+              onPress={async () => {
+                await clearPendingSignup();
+                setPendingConfirmationEmail("");
+                setPendingConfirmationPassword("");
+                setConfirmationMessage("");
+                setAuthMessage("");
+                setStep("auth");
+              }}
+            >
+              <Text style={styles.textButtonText}>Use another email</Text>
+            </Pressable>
+            {confirmationMessage ? <Text style={styles.errorText}>{confirmationMessage}</Text> : null}
           </ScrollView>
         )}
 
