@@ -48,7 +48,9 @@ In Supabase, open `Authentication` -> `URL Configuration` and set:
 - Site URL: `http://localhost:8081`
 - Redirect URLs:
   - `http://localhost:8789/auth-callback.html`
+  - `http://localhost:8789/reset-password.html`
   - `http://YOUR_PC_LAN_IP:8789/auth-callback.html`
+  - `http://YOUR_PC_LAN_IP:8789/reset-password.html`
   - `unimatch://auth/callback`
 
 For iPhone testing with Expo Go, set this in `.env` before starting the app:

@@ -11,6 +11,10 @@ export function getAuthRedirectUrl() {
   return "http://localhost:8081/auth-callback.html";
 }
 
+export function getPasswordResetRedirectUrl() {
+  return getAuthRedirectUrl().replace("auth-callback.html", "reset-password.html");
+}
+
 export function isAuthCallbackUrl(url: string) {
   return url.includes("/auth/callback")
     || url.includes("/auth-callback.html")

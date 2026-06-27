@@ -18,7 +18,7 @@ import {
 } from "react-native";
 
 import { theme } from "./src/components/Theme";
-import { getAuthRedirectUrl, isAuthCallbackUrl } from "./src/lib/authRedirect";
+import { getAuthRedirectUrl, getPasswordResetRedirectUrl, isAuthCallbackUrl } from "./src/lib/authRedirect";
 import {
   VerificationReview,
   createVerificationRequest,
@@ -26,6 +26,7 @@ import {
   resendConfirmationEmail,
   reviewVerificationAutomatically,
   saveProfile,
+  sendPasswordResetEmail,
   signInWithEmail,
   signUpWithEmail,
 } from "./src/lib/profileApi";
@@ -274,6 +275,16 @@ export default function App() {
         return;
       }
 
+      if (mode === "sign-up" && isExistingAccountSignUpResult(result.data)) {
+        await savePendingSignup(normalizedEmail, password);
+        setConfirmationMessage(
+          "This email is already registered. If it is yours, sign in with the original password or reset the password.",
+        );
+        setPendingConfirmationEmail(normalizedEmail);
+        setStep("confirm-email");
+        return;
+      }
+
       const session = result.data.session ?? (await supabase.auth.getSession()).data.session;
       if (!session) {
         const message = mode === "sign-up"
@@ -335,8 +346,8 @@ export default function App() {
       throw result.error;
     }
     setPendingConfirmationEmail(targetEmail);
-    setConfirmationMessage("Confirmation email sent again. Check your inbox and spam folder.");
-    setAuthMessage("Confirmation email sent again. Check your inbox and spam folder.");
+    setConfirmationMessage("If this account is still unconfirmed, Supabase will send another confirmation email. Check your inbox and spam folder.");
+    setAuthMessage("If this account is still unconfirmed, Supabase will send another confirmation email.");
     Alert.alert("Confirmation email sent", "Check your inbox and spam folder, then come back and sign in.");
   }
 
@@ -354,9 +365,7 @@ export default function App() {
       const result = await signInWithEmail(targetEmail, targetPassword);
       if (result.error) {
         setConfirmationMessage(
-          result.error.message.toLowerCase().includes("email not confirmed")
-            ? "Email is not confirmed yet. Open the newest confirmation email, then tap the button again."
-            : result.error.message,
+          friendlySignInError(result.error.message),
         );
         return;
       }
@@ -391,12 +400,52 @@ export default function App() {
     await AsyncStorage.multiRemove([pendingSignupEmailKey, pendingSignupPasswordKey]);
   }
 
+  async function sendPasswordReset() {
+    const targetEmail = (pendingConfirmationEmail || email.trim()).toLowerCase();
+    if (!targetEmail) {
+      setConfirmationMessage("Enter your email first.");
+      return;
+    }
+
+    setIsAuthenticating(true);
+    setConfirmationMessage("");
+    try {
+      const result = await sendPasswordResetEmail(targetEmail, getPasswordResetRedirectUrl());
+      if (result.error) throw result.error;
+      setConfirmationMessage("Password reset email sent. Use it if this account already exists with another password.");
+      Alert.alert("Password email sent", "Check your inbox and spam folder.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not send password reset email.";
+      setConfirmationMessage(message);
+      Alert.alert("Could not send email", message);
+    } finally {
+      setIsAuthenticating(false);
+    }
+  }
+
   function shouldResendConfirmationAfterSignUpError(message: string) {
     const normalized = message.toLowerCase();
     return normalized.includes("already")
       || normalized.includes("registered")
       || normalized.includes("exists")
       || normalized.includes("user");
+  }
+
+  function isExistingAccountSignUpResult(data: unknown) {
+    if (!data || typeof data !== "object" || !("user" in data)) return false;
+    const user = (data as { user?: { identities?: unknown[] | null } | null }).user;
+    return Array.isArray(user?.identities) && user.identities.length === 0;
+  }
+
+  function friendlySignInError(message: string) {
+    const normalized = message.toLowerCase();
+    if (normalized.includes("email not confirmed")) {
+      return "Email is not confirmed yet. Open the newest confirmation email, then tap the button again.";
+    }
+    if (normalized.includes("invalid login credentials")) {
+      return "Email is confirmed, but the password does not match this account. Use the original password or request a password reset email.";
+    }
+    return message;
   }
 
   async function chooseProfilePhoto() {
@@ -656,6 +705,9 @@ export default function App() {
             </Pressable>
             <Pressable style={styles.outline} disabled={isAuthenticating} onPress={resendConfirmation}>
               <Text style={styles.outlineText}>Send confirmation email again</Text>
+            </Pressable>
+            <Pressable style={styles.outline} disabled={isAuthenticating} onPress={sendPasswordReset}>
+              <Text style={styles.outlineText}>Reset password by email</Text>
             </Pressable>
             <Pressable
               style={styles.textButton}

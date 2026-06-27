@@ -51,6 +51,12 @@ export async function resendConfirmationEmail(email: string, emailRedirectTo?: s
   });
 }
 
+export async function sendPasswordResetEmail(email: string, emailRedirectTo?: string) {
+  return supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: emailRedirectTo,
+  });
+}
+
 export async function sendMagicLink(email: string) {
   return supabase.auth.signInWithOtp({
     email,
