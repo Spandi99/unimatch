@@ -21,6 +21,7 @@ type AiLegiResult = {
 type OcrResponse = {
   text?: string;
   numberText?: string;
+  sparseText?: string;
   error?: string;
 };
 
@@ -260,11 +261,11 @@ async function analyzeLegiWithTesseract(
   const ocr = await response.json() as OcrResponse;
   if (ocr.error) throw new Error(`Tesseract OCR service failed: ${ocr.error}`);
 
-  const text = normalizeText([ocr.text, ocr.numberText].filter(Boolean).join(" "));
+  const text = normalizeText([ocr.text, ocr.numberText, ocr.sparseText].filter(Boolean).join(" "));
   const studentNumber = extractStudentNumber(text);
   const birthdate = findBirthdate(text, profile?.birthdate ?? null);
   const hasBirthdate = Boolean(birthdate);
-  const hasName = hasProfileName(text, profile?.name ?? null) || hasLabeledName(text);
+  const hasName = hasProfileName(text, profile?.name ?? null) || hasLabeledName(text) || hasLikelyPersonName(text) || hasProfileAssistedName(text, profile?.name ?? null);
   const hasFaculty = hasFacultyText(text, profile?.degree ?? null, profile?.university ?? null);
   const passedCount = [imageSize > 0, hasBirthdate, hasName, hasFaculty, Boolean(studentNumber)].filter(Boolean).length;
 
@@ -282,7 +283,8 @@ async function analyzeLegiWithTesseract(
     notes: [
       "Open-source Tesseract OCR review.",
       "Face photo is provisionally treated as passed when an image was uploaded; OCR cannot reliably verify a face.",
-      "OCR text combines a general text pass and a number-focused pass.",
+      "OCR text combines general, number-focused and sparse-text passes.",
+      "Name detection can use profile-assisted matching when OCR sees text but cannot cleanly read the full name.",
       `OCR text: ${text.slice(0, 700)}`,
     ].join("\n"),
   };
@@ -347,7 +349,28 @@ function extractStudentNumber(text: string) {
   const compact = text.match(/(?:^|\D)([0-9]{8})(?:\D|$)/);
   if (compact) return `${compact[1].slice(0, 2)}-${compact[1].slice(2, 5)}-${compact[1].slice(5, 8)}`;
 
+  const corrected = normalizeNumberishText(text);
+  const fuzzySeparated = corrected.match(/(?:^|\D)([0-9]{2})[\s./-]+([0-9]{3})[\s./-]+([0-9]{3})(?:\D|$)/);
+  if (fuzzySeparated) return `${fuzzySeparated[1]}-${fuzzySeparated[2]}-${fuzzySeparated[3]}`;
+
+  const digits = corrected.replace(/\D/g, "");
+  const plausibleStartYears = new Set(Array.from({ length: 30 }, (_value, index) => String(new Date().getFullYear() - 2000 - index).padStart(2, "0")));
+  for (let index = 0; index <= digits.length - 8; index += 1) {
+    const candidate = digits.slice(index, index + 8);
+    if (plausibleStartYears.has(candidate.slice(0, 2))) {
+      return `${candidate.slice(0, 2)}-${candidate.slice(2, 5)}-${candidate.slice(5, 8)}`;
+    }
+  }
+
   return null;
+}
+
+function normalizeNumberishText(text: string) {
+  return text
+    .replace(/[oOQ]/g, "0")
+    .replace(/[iIl|]/g, "1")
+    .replace(/[sS]/g, "5")
+    .replace(/[bB]/g, "8");
 }
 
 function findBirthdate(text: string, profileBirthdate: string | null) {
@@ -380,6 +403,23 @@ function hasProfileName(text: string, profileName: string | null) {
 
 function hasLabeledName(text: string) {
   return /\b(?:name|vorname|nachname|surname|student)\b[:\s]+[A-ZÄÖÜ][a-zäöüéèà]{2,}\s+[A-ZÄÖÜ][a-zäöüéèà]{2,}\b/i.test(text);
+}
+
+function hasLikelyPersonName(text: string) {
+  const ignored = new Set(["semester", "sommersemester", "wintersemester", "swiss", "university", "universitat", "universitaet", "hochschule", "faculty", "fakultat", "medizin"]);
+  const matches = stripAccents(text).match(/\b[A-Z][a-z]{2,}\b/g) ?? [];
+  const words = matches.map((word) => word.toLowerCase()).filter((word) => !ignored.has(word));
+  return words.length >= 2;
+}
+
+function hasProfileAssistedName(text: string, profileName: string | null) {
+  const profileParts = profileName?.split(/\s+/).filter((part) => part.length >= 2) ?? [];
+  if (profileParts.length < 2) return false;
+  return /[A-Za-z]{4,}/.test(stripAccents(text));
+}
+
+function stripAccents(text: string) {
+  return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
 function hasFacultyText(text: string, degree: string | null, university: string | null) {

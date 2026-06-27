@@ -5,6 +5,7 @@ const app = express();
 const port = Number(process.env.PORT || 8788);
 let textWorkerPromise;
 let numberWorkerPromise;
+let sparseWorkerPromise;
 
 app.use(express.json({ limit: "12mb" }));
 
@@ -22,16 +23,19 @@ app.post("/ocr", async (request, response) => {
 
     const textWorker = await getTextWorker();
     const numberWorker = await getNumberWorker();
+    const sparseWorker = await getSparseWorker();
     const image = Buffer.from(imageBase64, "base64");
-    const [textResult, numberResult] = await Promise.all([
+    const [textResult, numberResult, sparseResult] = await Promise.all([
       textWorker.recognize(image),
       numberWorker.recognize(image),
+      sparseWorker.recognize(image),
     ]);
 
     response.json({
       text: textResult.data.text,
       numberText: numberResult.data.text,
-      confidence: Math.max(textResult.data.confidence ?? 0, numberResult.data.confidence ?? 0),
+      sparseText: sparseResult.data.text,
+      confidence: Math.max(textResult.data.confidence ?? 0, numberResult.data.confidence ?? 0, sparseResult.data.confidence ?? 0),
     });
   } catch (error) {
     response.status(500).json({
@@ -61,4 +65,16 @@ async function getNumberWorker() {
     });
   }
   return numberWorkerPromise;
+}
+
+async function getSparseWorker() {
+  if (!sparseWorkerPromise) {
+    sparseWorkerPromise = createWorker("eng+deu").then(async (worker) => {
+      await worker.setParameters({
+        tessedit_pageseg_mode: "11",
+      });
+      return worker;
+    });
+  }
+  return sparseWorkerPromise;
 }
