@@ -44,22 +44,34 @@ Use Expo Go or a development build to run it on iPhone and Android.
 Fastest real-device loop:
 
 ```powershell
-.\scripts\start-dev.ps1
+npm run dev:all:lan
 ```
 
 Then open the Expo QR code with Expo Go on iPhone or Android. Your phone and PC should be on the same Wi-Fi.
 
-For web preview on the PC:
+For web preview on the PC with a mobile-sized browser:
 
 ```powershell
-npx.cmd expo start --web --port 8081 --clear
+npm run dev:all
 ```
 
-For native device preview:
+Open `http://localhost:8081`, then use your browser's responsive/device toolbar to preview iPhone-sized layouts.
+
+For native device preview without the helper script:
 
 ```powershell
 npx.cmd expo start --host lan --port 8081 --clear
 ```
+
+### iPhone / Android on a PC
+
+On Windows, Apple's real iPhone Simulator is not available because it requires Xcode on macOS.
+
+Best options:
+
+- iPhone: use Expo Go on the real phone.
+- Android: use Android Studio Emulator on the PC, then run `npx.cmd expo start --android`.
+- PC layout check: use Expo Web plus browser responsive mode for iPhone-sized screens.
 
 The development helper starts:
 

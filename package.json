@@ -8,6 +8,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "dev:all": "powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1",
+    "dev:all:lan": "powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 -ExpoMode lan",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
