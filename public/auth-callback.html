@@ -61,9 +61,54 @@
   <body>
     <main>
       <div class="mark">U</div>
-      <h1>Email confirmed</h1>
-      <p>Your UniMatch account is confirmed. Go back to Expo Go and tap "I confirmed my email".</p>
-      <p>You can close this browser tab now.</p>
+      <h1 id="title">Confirming email</h1>
+      <p id="message">Please wait while UniMatch confirms your account.</p>
+      <p id="close" hidden>You can close this browser tab now.</p>
     </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+      const supabaseUrl = "__SUPABASE_URL__";
+      const supabaseKey = "__SUPABASE_KEY__";
+      const client = window.supabase.createClient(supabaseUrl, supabaseKey);
+      const title = document.getElementById("title");
+      const message = document.getElementById("message");
+      const close = document.getElementById("close");
+
+      confirmEmail();
+
+      async function confirmEmail() {
+        try {
+          if (!supabaseUrl || !supabaseKey) {
+            throw new Error("Supabase settings are missing on this callback page.");
+          }
+
+          const url = new URL(window.location.href.replace("#", "?"));
+          const code = url.searchParams.get("code");
+          const accessToken = url.searchParams.get("access_token");
+          const refreshToken = url.searchParams.get("refresh_token");
+
+          if (code) {
+            const { error } = await client.auth.exchangeCodeForSession(code);
+            if (error) throw error;
+          } else if (accessToken && refreshToken) {
+            const { error } = await client.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (error) throw error;
+          } else {
+            throw new Error("This confirmation link is missing its login code.");
+          }
+
+          title.textContent = "Email confirmed";
+          message.textContent = "Your UniMatch account is confirmed. Go back to Expo Go and sign in.";
+          close.hidden = false;
+        } catch (error) {
+          title.textContent = "Confirmation failed";
+          message.textContent = error.message || "Could not confirm this email link.";
+        }
+      }
+    </script>
   </body>
 </html>

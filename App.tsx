@@ -7,7 +7,6 @@ import {
   Animated,
   Easing,
   Image,
-  ImageSourcePropType,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -33,6 +32,7 @@ import {
   reviewVerificationAutomatically,
   saveProfile,
   sendPasswordResetEmail,
+  signInAnonymously,
   signInWithEmail,
   signUpWithEmail,
 } from "./src/lib/profileApi";
@@ -51,24 +51,18 @@ const genderOptions: Array<{ label: string; value: GenderIdentity }> = [
 ];
 
 const meetOptions = ["women", "men", "non_binary_people", "everyone"];
-const profileImages = [
-  require("./Mockbilder/PB1.png"),
-  require("./Mockbilder/PB2.png"),
-  require("./Mockbilder/PB3.png"),
-  require("./Mockbilder/PB4.png"),
-] as ImageSourcePropType[];
-const demoProfiles = [
-  { initials: "SK", name: "Sophie", age: 24, uni: "University of Bern", degree: "Medicine", distance: "~120m", place: "Unitobler library", bio: "Running, cooking, and cinema. Usually studying near the anatomy floor.", photo: profileImages[0] },
-  { initials: "NF", name: "Nina", age: 22, uni: "BFH", degree: "Design", distance: "~200m", place: "Bern main library", bio: "Illustration, yoga, and collecting too many houseplants.", photo: profileImages[1] },
-  { initials: "MR", name: "Marco", age: 26, uni: "University of Bern", degree: "Architecture", distance: "~350m", place: "Muesmatt campus", bio: "Photography, cycling, strong opinions about fonts.", photo: profileImages[2] },
-  { initials: "LB", name: "Lena", age: 23, uni: "PHBern", degree: "Education", distance: "~470m", place: "PHBern cafe", bio: "Reading too much, hiking when not reading.", photo: profileImages[3] },
-  { initials: "AM", name: "Amira", age: 25, uni: "University of Bern", degree: "Law", distance: "~520m", place: "Mittelstrasse campus", bio: "Mock trials, late espresso, and weekend trains to the mountains.", photo: profileImages[0] },
-  { initials: "JO", name: "Jonas", age: 23, uni: "BFH", degree: "Computer Science", distance: "~610m", place: "Marzili study rooms", bio: "Climbing, indie games, and always looking for the quietest table.", photo: profileImages[2] },
-  { initials: "EA", name: "Elena", age: 21, uni: "PHBern", degree: "Education", distance: "~760m", place: "PHBern library", bio: "Children's books, bouldering, and making very specific playlists.", photo: profileImages[1] },
-  { initials: "TM", name: "Tim", age: 26, uni: "University of Bern", degree: "Economics", distance: "~840m", place: "VonRoll cafe", bio: "Good spreadsheets, better dumplings, and Sunday basketball.", photo: profileImages[3] },
-  { initials: "YA", name: "Yara", age: 24, uni: "BFH", degree: "Social Work", distance: "~950m", place: "Bern main library", bio: "Volunteering, live music, and debating where the best falafel is.", photo: profileImages[0] },
-  { initials: "LU", name: "Luc", age: 22, uni: "University of Bern", degree: "Psychology", distance: "~1.1km", place: "Unitobler courtyard", bio: "Podcasts, tennis, and overthinking cafe seating arrangements.", photo: profileImages[2] },
-];
+type DemoProfile = {
+  initials: string;
+  name: string;
+  age: number;
+  uni: string;
+  degree: string;
+  distance: string;
+  place: string;
+  bio: string;
+  photo?: number;
+};
+const demoProfiles: DemoProfile[] = [];
 const hotspotCategories = ["All", "Libraries", "Cafes", "Mensa", "Campus"];
 const hotspots = [
   { name: "Von-Roll-Bibliothek", category: "Libraries", status: "Jetzt viele da", distance: "~120 m", people: 34, tone: "busy" },
@@ -83,6 +77,7 @@ const requestLifetimeHours = 48;
 const rememberMeKey = "unimatch.rememberMe";
 const pendingSignupEmailKey = "unimatch.pendingSignupEmail";
 const pendingSignupPasswordKey = "unimatch.pendingSignupPassword";
+const enableTestAuth = process.env.EXPO_PUBLIC_ENABLE_TEST_AUTH === "true";
 const institutionGroups = [
   {
     title: "Universities in Bern",
@@ -142,21 +137,14 @@ export default function App() {
   const [requestProfile, setRequestProfile] = useState<number | null>(null);
   const [requestDraft, setRequestDraft] = useState("");
   const [discoverQueue, setDiscoverQueue] = useState(demoProfiles.map((_, index) => index));
-  const [outgoingRequests, setOutgoingRequests] = useState<Array<{ profile: typeof demoProfiles[number]; note: string; createdAt: number }>>([
-    { profile: demoProfiles[4], note: "Saw you near VonRoll earlier. Coffee break this week?", createdAt: Date.now() - 7 * 60 * 60 * 1000 },
-  ]);
+  const [outgoingRequests, setOutgoingRequests] = useState<Array<{ profile: DemoProfile; note: string; createdAt: number }>>([]);
   const [selectedHotspot, setSelectedHotspot] = useState(hotspots[0].name);
   const [hotspotFilter, setHotspotFilter] = useState("All");
   const [chatIndex, setChatIndex] = useState<number | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileSaveMessage, setProfileSaveMessage] = useState("");
-  const [incomingRequests, setIncomingRequests] = useState([
-    { profile: demoProfiles[3], note: "I think we were both in the library earlier. Coffee after lectures?", time: "8m" },
-    { profile: demoProfiles[0], note: "Your bio had me at mediocre pasta. Trade recipes?", time: "24m" },
-  ]);
-  const [matches, setMatches] = useState([
-    { profile: demoProfiles[1], messages: [{ text: "Hey! How was your exam?", mine: false }], time: "2m" },
-  ]);
+  const [incomingRequests, setIncomingRequests] = useState<Array<{ profile: DemoProfile; note: string; time: string }>>([]);
+  const [matches, setMatches] = useState<Array<{ profile: DemoProfile; messages: Array<{ text: string; mine: boolean }>; time: string }>>([]);
   const [draft, setDraft] = useState<ProfileDraft>({
     name: "",
     birthdate: "",
@@ -170,9 +158,37 @@ export default function App() {
 
   const canFinish = Boolean(draft.name.trim() && draft.birthdate && draft.photoUri && draft.legiUri);
   const currentDiscoverIndex = discoverQueue[0] ?? null;
+  const selectedDemoProfile = selectedProfile !== null ? demoProfiles[selectedProfile] : null;
+  const requestDemoProfile = requestProfile !== null ? demoProfiles[requestProfile] : null;
   const activeOutgoingRequests = outgoingRequests.filter((request) => requestHoursLeft(request.createdAt) > 0);
   const visibleHotspots = hotspots.filter((hotspot) => hotspotFilter === "All" || hotspot.category === hotspotFilter);
   const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") return;
+
+    const elements = [document.documentElement, document.body, document.getElementById("root")].filter(Boolean) as HTMLElement[];
+    const previousStyles = elements.map((element) => ({
+      element,
+      height: element.style.height,
+      minHeight: element.style.minHeight,
+      overflow: element.style.overflow,
+    }));
+
+    elements.forEach((element) => {
+      element.style.height = "100%";
+      element.style.minHeight = "100%";
+      element.style.overflow = "auto";
+    });
+
+    return () => {
+      previousStyles.forEach(({ element, height, minHeight, overflow }) => {
+        element.style.height = height;
+        element.style.minHeight = minHeight;
+        element.style.overflow = overflow;
+      });
+    };
+  }, []);
 
   useEffect(() => {
     function handleUrl(url: string | null) {
@@ -195,19 +211,6 @@ export default function App() {
         return;
       }
 
-      const pendingEmail = await AsyncStorage.getItem(pendingSignupEmailKey);
-      const pendingPassword = await AsyncStorage.getItem(pendingSignupPasswordKey);
-      if (pendingEmail && pendingPassword) {
-        setEmail(pendingEmail);
-        setPassword(pendingPassword);
-        setPendingConfirmationEmail(pendingEmail);
-        setPendingConfirmationPassword(pendingPassword);
-        setConfirmationMessage("Open the confirmation email, then come back here. UniMatch will continue with the saved login details.");
-        setStep("confirm-email");
-        setIsBooting(false);
-        return;
-      }
-
       const savedRememberMe = await AsyncStorage.getItem(rememberMeKey);
       if (savedRememberMe === "false") {
         setRememberMe(false);
@@ -217,7 +220,21 @@ export default function App() {
 
       const session = (await supabase.auth.getSession()).data.session;
       if (session?.user) {
+        await clearPendingSignup();
         await routeAfterAuthentication(session.user.id);
+        setIsBooting(false);
+        return;
+      }
+
+      const pendingEmail = await AsyncStorage.getItem(pendingSignupEmailKey);
+      const pendingPassword = await AsyncStorage.getItem(pendingSignupPasswordKey);
+      if (pendingEmail && pendingPassword) {
+        setEmail(pendingEmail);
+        setPassword(pendingPassword);
+        setPendingConfirmationEmail(pendingEmail);
+        setPendingConfirmationPassword(pendingPassword);
+        setConfirmationMessage("Open the confirmation email, then come back here. UniMatch will continue with the saved login details.");
+        setStep("confirm-email");
       }
       setIsBooting(false);
     }
@@ -412,6 +429,31 @@ export default function App() {
     Alert.alert("Confirmation email sent", "Check your inbox and spam folder, then come back and sign in.");
   }
 
+  async function authenticateTestUser() {
+    setAuthMessage("");
+    setIsAuthenticating(true);
+    try {
+      const result = await signInAnonymously();
+      if (result.error) throw result.error;
+
+      const session = result.data.session ?? (await supabase.auth.getSession()).data.session;
+      if (!session?.user) throw new Error("Test login did not create a session.");
+
+      await AsyncStorage.setItem(rememberMeKey, "true");
+      await clearPendingSignup();
+      setPendingConfirmationEmail("");
+      setPendingConfirmationPassword("");
+      setProfileMessage("");
+      await routeAfterAuthentication(session.user.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not start test login.";
+      setAuthMessage(message);
+      Alert.alert("Test login failed", message);
+    } finally {
+      setIsAuthenticating(false);
+    }
+  }
+
   async function checkConfirmedAndContinue() {
     const targetEmail = (pendingConfirmationEmail || email.trim()).toLowerCase();
     const targetPassword = pendingConfirmationPassword || password;
@@ -464,6 +506,7 @@ export default function App() {
   async function sendPasswordReset() {
     const targetEmail = (pendingConfirmationEmail || email.trim()).toLowerCase();
     if (!targetEmail) {
+      setAuthMessage("Enter your email first.");
       setConfirmationMessage("Enter your email first.");
       return;
     }
@@ -473,10 +516,19 @@ export default function App() {
     try {
       const result = await sendPasswordResetEmail(targetEmail, getPasswordResetRedirectUrl());
       if (result.error) throw result.error;
-      setConfirmationMessage("Password reset email sent. Use it if this account already exists with another password.");
+      await clearPendingSignup();
+      setEmail(targetEmail);
+      setPassword("");
+      setPendingConfirmationEmail("");
+      setPendingConfirmationPassword("");
+      setStep("auth");
+      const message = "Password reset email sent. Set a new password from the email, then sign in here.";
+      setAuthMessage(message);
+      setConfirmationMessage(message);
       Alert.alert("Password email sent", "Check your inbox and spam folder.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not send password reset email.";
+      setAuthMessage(message);
       setConfirmationMessage(message);
       Alert.alert("Could not send email", message);
     } finally {
@@ -616,12 +668,31 @@ export default function App() {
       const verificationRequestId = verification.data?.id;
       if (!verificationRequestId) throw new Error("Legi review request was created without an id.");
 
-      setSubmitStage("OCR is checking the Legi criteria...");
-      await reviewVerificationAutomatically(verificationRequestId);
+      let automatedReviewError = "";
+      let automatedReview = null as Awaited<ReturnType<typeof reviewVerificationAutomatically>> | null;
+      try {
+        setSubmitStage("OCR is checking the Legi criteria...");
+        automatedReview = await reviewVerificationAutomatically(verificationRequestId);
+      } catch (error) {
+        automatedReviewError = error instanceof Error ? error.message : "Automatic Legi review failed.";
+      }
 
       setSubmitStage("Loading review result...");
-      const latestReview = await refreshReview(data.user.id);
+      let latestReview = await refreshReview(data.user.id);
+      if (automatedReview) {
+        latestReview = {
+          id: verificationRequestId,
+          status: automatedReview.status,
+          created_at: verification.data.created_at,
+          reviewed_at: automatedReview.checks.reviewed_at,
+          checks: automatedReview.checks,
+        };
+        setReview(latestReview);
+      }
       if (latestReview?.status === "verified") setShowVerifiedBanner(true);
+      if (automatedReviewError) {
+        setReviewMessage(`Legi uploaded, but automatic OCR did not finish: ${automatedReviewError}`);
+      }
       setStep(latestReview?.status === "verified" ? "home" : "review");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -711,7 +782,7 @@ export default function App() {
           </View>
         )}
         {!isBooting && step === "auth" && (
-          <ScrollView contentContainerStyle={styles.centerScreen}>
+          <ScrollView style={styles.flex} contentContainerStyle={styles.centerScreen} keyboardShouldPersistTaps="handled">
             <AuthHero compact={Boolean(pendingConfirmationEmail)} />
 
             <View style={styles.section}>
@@ -738,17 +809,25 @@ export default function App() {
             <Pressable style={[styles.outline, isAuthenticating && styles.disabled]} disabled={isAuthenticating} onPress={() => authenticate("sign-in")}>
               <Text style={styles.outlineText}>{pendingConfirmationEmail ? "I confirmed it - sign in" : "Sign in"}</Text>
             </Pressable>
+            {enableTestAuth && !pendingConfirmationEmail ? (
+              <Pressable style={[styles.outline, isAuthenticating && styles.disabled]} disabled={isAuthenticating} onPress={authenticateTestUser}>
+                <Text style={styles.outlineText}>Continue as test user</Text>
+              </Pressable>
+            ) : null}
             {pendingConfirmationEmail ? (
               <Pressable style={styles.textButton} disabled={isAuthenticating} onPress={resendConfirmation}>
                 <Text style={styles.textButtonText}>Send confirmation email again</Text>
               </Pressable>
             ) : null}
+            <Pressable style={styles.textButton} disabled={isAuthenticating} onPress={sendPasswordReset}>
+              <Text style={styles.textButtonText}>Reset password by email</Text>
+            </Pressable>
             {authMessage ? <Text style={styles.errorText}>{authMessage}</Text> : null}
           </ScrollView>
         )}
 
         {!isBooting && step === "confirm-email" && (
-          <ScrollView contentContainerStyle={styles.centerScreen}>
+          <ScrollView style={styles.flex} contentContainerStyle={styles.centerScreen} keyboardShouldPersistTaps="handled">
             <View style={styles.brandRow}>
               <View style={styles.brandIcon}>
                 <Text style={styles.brandIconText}>U</Text>
@@ -816,7 +895,7 @@ export default function App() {
         )}
 
         {!isBooting && step === "onboarding" && (
-          <ScrollView contentContainerStyle={styles.screen}>
+          <ScrollView style={styles.flex} contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled">
             <Text style={styles.navTitle}>Create profile</Text>
             <Pressable style={styles.photoBox} onPress={chooseProfilePhoto}>
               {draft.photoUri ? (
@@ -830,13 +909,7 @@ export default function App() {
             </Pressable>
 
             <TextInput style={styles.input} placeholder="Name" value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} />
-            <TextInput
-              style={styles.input}
-              placeholder="YYYY-MM-DD"
-              keyboardType="number-pad"
-              value={draft.birthdate}
-              onChangeText={updateBirthdate}
-            />
+            <BirthdateInput value={draft.birthdate} onChangeText={updateBirthdate} />
 
             <Text style={styles.heading}>Gender</Text>
             <View style={styles.chips}>
@@ -919,7 +992,7 @@ export default function App() {
         )}
 
         {!isBooting && step === "review" && (
-          <ScrollView contentContainerStyle={styles.screen}>
+          <ScrollView style={styles.flex} contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled">
             <Text style={styles.navTitle}>{review?.status === "verified" ? "Review verified" : review?.status === "rejected" ? "Review rejected" : "Review pending"}</Text>
             <View style={styles.notice}>
               <Text style={styles.heading}>Profile submitted</Text>
@@ -963,9 +1036,9 @@ export default function App() {
                   setMatches((current) => current.map((match, index) => index === chatIndex ? { ...match, messages: [...match.messages, { text, mine: true }] } : match));
                 }}
               />
-            ) : requestProfile !== null ? (
+            ) : requestDemoProfile ? (
               <RequestComposer
-                profile={demoProfiles[requestProfile]}
+                profile={requestDemoProfile}
                 draft={requestDraft}
                 onDraft={setRequestDraft}
                 onBack={() => setRequestProfile(null)}
@@ -976,18 +1049,20 @@ export default function App() {
                   }
                   Alert.alert("Request sent", "The chat opens only if they accept.");
                   setOutgoingRequests((current) => [
-                    { profile: demoProfiles[requestProfile], note: requestDraft.trim(), createdAt: Date.now() },
+                    { profile: requestDemoProfile, note: requestDraft.trim(), createdAt: Date.now() },
                     ...current,
                   ]);
-                  setDiscoverQueue((current) => current.filter((profileIndex) => profileIndex !== requestProfile));
+                  if (requestProfile !== null) {
+                    setDiscoverQueue((current) => current.filter((profileIndex) => profileIndex !== requestProfile));
+                  }
                   setRequestProfile(null);
                   setSelectedProfile(null);
                   setRequestDraft("");
                 }}
               />
-            ) : selectedProfile !== null ? (
+            ) : selectedDemoProfile ? (
               <ProfileDetail
-                profile={demoProfiles[selectedProfile]}
+                profile={selectedDemoProfile}
                 onBack={() => setSelectedProfile(null)}
                 onRequest={() => {
                   setRequestProfile(selectedProfile);
@@ -996,7 +1071,7 @@ export default function App() {
               />
             ) : (
               <>
-                <ScrollView contentContainerStyle={styles.screenWithTabs}>
+                <ScrollView style={styles.flex} contentContainerStyle={styles.screenWithTabs} keyboardShouldPersistTaps="handled">
                   <Text style={styles.navTitle}>{appTabs[appTab]}</Text>
                   {showVerifiedBanner && (
                     <View style={styles.successBanner}>
@@ -1024,6 +1099,11 @@ export default function App() {
                           <Text style={styles.title}>You are invisible</Text>
                           <Text style={styles.caption}>Turn visibility back on to see nearby students and appear at this hotspot.</Text>
                         </View>
+                      ) : demoProfiles.length === 0 ? (
+                        <EmptyState
+                          title="No nearby profiles yet"
+                          body="Verified student profiles will appear here once real discovery data is connected."
+                        />
                       ) : (
                         demoProfiles.map((profile, index) => (
                           <Pressable key={profile.name} style={styles.profileRow} onPress={() => setSelectedProfile(index)}>
@@ -1055,7 +1135,7 @@ export default function App() {
                   {appTab === 2 && (
                     <>
                       {currentDiscoverIndex === null ? (
-                        <EmptyDiscover onReset={() => setDiscoverQueue(demoProfiles.map((_, index) => index))} />
+                        <EmptyDiscover onBrowseHotspots={() => setAppTab(1)} />
                       ) : (
                         <>
                           <DiscoverCard profile={demoProfiles[currentDiscoverIndex]} remaining={discoverQueue.length} pulse={pulse} hotspot={selectedHotspot} />
@@ -1095,7 +1175,12 @@ export default function App() {
                         ))
                       )}
                       <Text style={styles.heading}>Message requests</Text>
-                      {incomingRequests.map((request, index) => (
+                      {incomingRequests.length === 0 ? (
+                        <View style={styles.requestCard}>
+                          <Text style={styles.profileName}>No message requests</Text>
+                          <Text style={styles.caption}>New requests from verified students will show up here.</Text>
+                        </View>
+                      ) : incomingRequests.map((request, index) => (
                         <View key={`${request.profile.name}-${request.time}`} style={styles.requestCard}>
                           <View style={styles.requestHeader}>
                             <ProfilePhoto profile={request.profile} style={styles.smallAvatar} imageStyle={styles.avatarImage} />
@@ -1123,7 +1208,12 @@ export default function App() {
                         </View>
                       ))}
                       <Text style={styles.heading}>Chats</Text>
-                      {matches.map((match, index) => (
+                      {matches.length === 0 ? (
+                        <View style={styles.requestCard}>
+                          <Text style={styles.profileName}>No chats yet</Text>
+                          <Text style={styles.caption}>Accepted requests will open conversations here.</Text>
+                        </View>
+                      ) : matches.map((match, index) => (
                         <Pressable key={match.profile.name} style={styles.profileRow} onPress={() => setChatIndex(index)}>
                           <ProfilePhoto profile={match.profile} style={styles.avatar} imageStyle={styles.avatarImage} />
                           <View style={styles.profileCopy}>
@@ -1187,6 +1277,39 @@ function ReviewRow(props: { label: string; value: boolean | null | undefined }) 
       <Text style={styles.reviewLabel}>{props.label}</Text>
       <Text style={[styles.reviewValue, props.value === true && styles.reviewPassed, props.value === false && styles.reviewFailed]}>{marker}</Text>
     </View>
+  );
+}
+
+function BirthdateInput(props: { value: string; onChangeText: (value: string) => void }) {
+  const inputRef = useRef<TextInput>(null);
+  const digits = props.value.replace(/\D/g, "").slice(0, 8);
+  const mask = "YYYYMMDD";
+  const slots = mask.split("").map((placeholder, index) => ({
+    value: digits[index] ?? placeholder,
+    filled: index < digits.length,
+  }));
+
+  return (
+    <Pressable style={styles.birthdateField} onPress={() => inputRef.current?.focus()}>
+      <View style={styles.birthdateMask} pointerEvents="none">
+        {slots.map((slot, index) => (
+          <View key={`${slot.value}-${index}`} style={styles.birthdateSlotGroup}>
+            <Text style={[styles.birthdateSlot, slot.filled && styles.birthdateSlotFilled]}>{slot.value}</Text>
+            {index === 3 || index === 5 ? <Text style={styles.birthdateSlot}>-</Text> : null}
+          </View>
+        ))}
+      </View>
+      <TextInput
+        ref={inputRef}
+        style={styles.birthdateHiddenInput}
+        keyboardType="number-pad"
+        value={props.value}
+        onChangeText={props.onChangeText}
+        caretHidden
+        maxLength={10}
+        accessibilityLabel="Birthdate"
+      />
+    </Pressable>
   );
 }
 
@@ -1368,15 +1491,19 @@ function HotspotsScreen(props: {
   );
 }
 
-function ProfilePhoto(props: { profile: typeof demoProfiles[number]; style: StyleProp<ViewStyle>; imageStyle: StyleProp<ImageStyle> }) {
+function ProfilePhoto(props: { profile: DemoProfile; style: StyleProp<ViewStyle>; imageStyle: StyleProp<ImageStyle> }) {
   return (
     <View style={props.style}>
-      <Image source={props.profile.photo} style={props.imageStyle} resizeMode="cover" />
+      {props.profile.photo ? (
+        <Image source={props.profile.photo} style={props.imageStyle} resizeMode="cover" />
+      ) : (
+        <Text style={styles.avatarText}>{props.profile.initials}</Text>
+      )}
     </View>
   );
 }
 
-function DiscoverCard(props: { profile: typeof demoProfiles[number]; remaining: number; pulse: Animated.Value; hotspot: string }) {
+function DiscoverCard(props: { profile: DemoProfile; remaining: number; pulse: Animated.Value; hotspot: string }) {
   const lift = props.pulse.interpolate({
     inputRange: [0, 1],
     outputRange: [0, -4],
@@ -1385,7 +1512,7 @@ function DiscoverCard(props: { profile: typeof demoProfiles[number]; remaining: 
   return (
     <Animated.View style={[styles.discoverCard, { transform: [{ translateY: lift }] }]}>
       <View style={styles.discoverPhoto}>
-        <Image source={props.profile.photo} style={styles.discoverImage} resizeMode="cover" />
+        {props.profile.photo ? <Image source={props.profile.photo} style={styles.discoverImage} resizeMode="cover" /> : null}
         <View style={styles.photoFrame} />
         <View style={styles.hotspotBadge}>
           <Text style={styles.hotspotBadgeText}>{props.hotspot}</Text>
@@ -1408,32 +1535,44 @@ function DiscoverCard(props: { profile: typeof demoProfiles[number]; remaining: 
   );
 }
 
-function EmptyDiscover(props: { onReset: () => void }) {
+function EmptyState(props: { title: string; body: string }) {
   return (
     <View style={styles.emptyState}>
       <View style={styles.emptyMark}>
         <Text style={styles.emptyMarkText}>U</Text>
       </View>
-      <Text style={styles.title}>No one nearby right now</Text>
+      <Text style={styles.title}>{props.title}</Text>
+      <Text style={styles.caption}>{props.body}</Text>
+    </View>
+  );
+}
+
+function EmptyDiscover(props: { onBrowseHotspots: () => void }) {
+  return (
+    <View style={styles.emptyState}>
+      <View style={styles.emptyMark}>
+        <Text style={styles.emptyMarkText}>U</Text>
+      </View>
+      <Text style={styles.title}>No profiles in Discover</Text>
       <Text style={styles.caption}>
-        You have seen everyone available in this hotspot. Check back later or try another campus spot.
+        Real nearby profiles will appear here after discovery data is connected.
       </Text>
-      <Pressable style={styles.outline} onPress={props.onReset}>
-        <Text style={styles.outlineText}>Reset demo stack</Text>
+      <Pressable style={styles.outline} onPress={props.onBrowseHotspots}>
+        <Text style={styles.outlineText}>View hotspots</Text>
       </Pressable>
     </View>
   );
 }
 
-function ProfileDetail(props: { profile: typeof demoProfiles[number]; onBack: () => void; onRequest: () => void }) {
+function ProfileDetail(props: { profile: DemoProfile; onBack: () => void; onRequest: () => void }) {
   return (
-    <ScrollView contentContainerStyle={styles.screen}>
+    <ScrollView style={styles.flex} contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled">
       <Pressable style={styles.backButton} onPress={props.onBack}>
         <Text style={styles.backText}>Back to Nearby</Text>
       </Pressable>
       <View style={styles.discoverCard}>
         <View style={styles.discoverPhoto}>
-          <Image source={props.profile.photo} style={styles.discoverImage} resizeMode="cover" />
+          {props.profile.photo ? <Image source={props.profile.photo} style={styles.discoverImage} resizeMode="cover" /> : null}
           <View style={styles.photoFrame} />
         </View>
         <View style={styles.discoverCopy}>
@@ -1450,9 +1589,9 @@ function ProfileDetail(props: { profile: typeof demoProfiles[number]; onBack: ()
   );
 }
 
-function RequestComposer(props: { profile: typeof demoProfiles[number]; draft: string; onDraft: (value: string) => void; onBack: () => void; onSend: () => void }) {
+function RequestComposer(props: { profile: DemoProfile; draft: string; onDraft: (value: string) => void; onBack: () => void; onSend: () => void }) {
   return (
-    <ScrollView contentContainerStyle={styles.screen}>
+    <ScrollView style={styles.flex} contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled">
       <Pressable style={styles.backButton} onPress={props.onBack}>
         <Text style={styles.backText}>Back to Profile</Text>
       </Pressable>
@@ -1476,14 +1615,14 @@ function RequestComposer(props: { profile: typeof demoProfiles[number]; draft: s
   );
 }
 
-function ChatScreen(props: { match: { profile: typeof demoProfiles[number]; messages: Array<{ text: string; mine: boolean }> }; onBack: () => void; onSend: (text: string) => void }) {
+function ChatScreen(props: { match: { profile: DemoProfile; messages: Array<{ text: string; mine: boolean }> }; onBack: () => void; onSend: (text: string) => void }) {
   const [draft, setDraft] = useState("");
   return (
     <View style={styles.flex}>
       <Pressable style={styles.chatTitle} onPress={props.onBack}>
         <Text style={styles.chatTitleText}>Back to Matches - {props.match.profile.name}</Text>
       </Pressable>
-      <ScrollView contentContainerStyle={styles.chatBody}>
+      <ScrollView style={styles.flex} contentContainerStyle={styles.chatBody} keyboardShouldPersistTaps="handled">
         {props.match.messages.map((message, index) => (
           <View key={`${message.text}-${index}`} style={[styles.bubble, message.mine && styles.bubbleMine]}>
             <Text style={[styles.bubbleText, message.mine && styles.bubbleTextMine]}>{message.text}</Text>
@@ -1598,8 +1737,14 @@ const styles = StyleSheet.create({
   caption: { color: theme.muted, fontSize: 13, lineHeight: 19 },
   errorText: { color: "#b42318", fontSize: 13, lineHeight: 18, textAlign: "center" },
   progressText: { color: theme.muted, fontSize: 13, lineHeight: 18, textAlign: "center" },
-  input: { backgroundColor: theme.elevated, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, paddingHorizontal: 14, paddingVertical: 13, fontSize: 16, color: theme.text },
-  select: { backgroundColor: theme.elevated, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, paddingHorizontal: 14, paddingVertical: 13, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  input: { backgroundColor: theme.elevated, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, paddingHorizontal: 14, paddingVertical: 13, fontSize: 16, color: theme.text },
+  birthdateField: { height: 50, backgroundColor: theme.elevated, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, paddingHorizontal: 14, justifyContent: "center", overflow: "hidden" },
+  birthdateMask: { flexDirection: "row", alignItems: "center" },
+  birthdateSlotGroup: { flexDirection: "row", alignItems: "center" },
+  birthdateSlot: { color: "#b8b1c2", fontSize: 16, lineHeight: 22 },
+  birthdateSlotFilled: { color: theme.text },
+  birthdateHiddenInput: { ...StyleSheet.absoluteFillObject, color: "transparent", paddingHorizontal: 14, fontSize: 16 },
+  select: { backgroundColor: theme.elevated, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, paddingHorizontal: 14, paddingVertical: 13, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   selectText: { flex: 1, fontSize: 16, color: theme.text },
   selectArrow: { fontSize: 13, fontWeight: "500", color: theme.accent },
   optionPanel: { borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: theme.radius, overflow: "hidden" },
@@ -1622,15 +1767,15 @@ const styles = StyleSheet.create({
   checkboxText: { color: "#fff", fontSize: 14, fontWeight: "700" },
   checkLabel: { color: theme.text, fontSize: 14 },
   disabled: { opacity: 0.45 },
-  photoBox: { height: 190, borderRadius: 20, backgroundColor: theme.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  photoBox: { height: 190, borderRadius: 24, backgroundColor: theme.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   photo: { width: "100%", height: "100%" },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: theme.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator },
   chipSelected: { backgroundColor: theme.tagBg, borderColor: "#b7c6ec", borderWidth: 1 },
   chipText: { color: theme.muted, fontSize: 14, fontWeight: "500" },
   chipTextSelected: { color: theme.tagText },
-  notice: { backgroundColor: theme.tagBg, borderRadius: 18, padding: 16, gap: 8 },
-  reviewCard: { backgroundColor: theme.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: 18, padding: 16, gap: 10 },
+  notice: { backgroundColor: theme.tagBg, borderRadius: 22, padding: 16, gap: 8 },
+  reviewCard: { backgroundColor: theme.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: 22, padding: 16, gap: 10 },
   statusText: { alignSelf: "flex-start", backgroundColor: theme.tagBg, color: theme.tagText, borderRadius: 999, overflow: "hidden", paddingHorizontal: 10, paddingVertical: 5, fontSize: 13, fontWeight: "600" },
   reviewRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   reviewLabel: { flex: 1, color: theme.text, fontSize: 14 },

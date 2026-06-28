@@ -1,6 +1,7 @@
 param(
   [ValidateSet("web", "lan")]
   [string]$ExpoMode = "web",
+  [switch]$NoNgrok,
   [switch]$DryRun
 )
 
@@ -47,9 +48,21 @@ Start-DevWindow `
 
 Start-Sleep -Seconds 2
 
-Start-DevWindow `
-  -Title "ngrok" `
-  -Command $ngrokCommand
+if ($NoNgrok) {
+  Write-Host "[ngrok] Skipped. Supabase Cloud cannot reach the local OCR worker without a public LEGI_OCR_SERVICE_URL." -ForegroundColor Yellow
+} else {
+  Write-Host ""
+  Write-Host "ngrok requires a free account auth token before it can start a tunnel." -ForegroundColor Yellow
+  Write-Host "If this step fails with ERR_NGROK_4018, run once:"
+  Write-Host "  ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN"
+  Write-Host "Get the token from: https://dashboard.ngrok.com/get-started/your-authtoken"
+  Write-Host "To start everything except ngrok, run: .\scripts\start-dev.ps1 -NoNgrok"
+  Write-Host ""
+
+  Start-DevWindow `
+    -Title "ngrok" `
+    -Command $ngrokCommand
+}
 
 Start-Sleep -Seconds 2
 
@@ -59,14 +72,23 @@ Start-DevWindow `
 
 if ($DryRun) {
   Write-Host "Dry run complete. No windows were opened." -ForegroundColor Green
+} elseif ($NoNgrok) {
+  Write-Host "Opened OCR worker and Expo in separate PowerShell windows. ngrok was skipped." -ForegroundColor Green
 } else {
   Write-Host "Opened OCR worker, ngrok and Expo in separate PowerShell windows." -ForegroundColor Green
 }
 Write-Host ""
 Write-Host "Important:" -ForegroundColor Yellow
-Write-Host "1. Copy the https://...ngrok-free.app forwarding URL from the ngrok window."
-Write-Host "2. Set it in Supabase as LEGI_OCR_SERVICE_URL."
-Write-Host "3. If review-legi changed, deploy it with: npx.cmd supabase functions deploy review-legi"
-Write-Host "4. For iPhone/Android through Expo Go, run: .\scripts\start-dev.ps1 -ExpoMode lan"
-Write-Host "5. Email confirmation page runs on http://localhost:8789/auth-callback.html"
+if ($NoNgrok) {
+  Write-Host "1. ngrok was skipped, so Supabase Cloud cannot call the local OCR worker."
+  Write-Host "2. Use LEGI_REVIEW_MODE=demo or set LEGI_OCR_SERVICE_URL to a deployed/public OCR worker."
+  Write-Host "3. For iPhone/Android through Expo Go, run: .\scripts\start-dev.ps1 -ExpoMode lan -NoNgrok"
+  Write-Host "4. Email confirmation page runs on http://localhost:8789/auth-callback.html"
+} else {
+  Write-Host "1. Copy the https://...ngrok-free.app forwarding URL from the ngrok window."
+  Write-Host "2. Set it in Supabase as LEGI_OCR_SERVICE_URL."
+  Write-Host "3. If review-legi changed, deploy it with: npx.cmd supabase functions deploy review-legi"
+  Write-Host "4. For iPhone/Android through Expo Go, run: .\scripts\start-dev.ps1 -ExpoMode lan"
+  Write-Host "5. Email confirmation page runs on http://localhost:8789/auth-callback.html"
+}
 Write-Host ""

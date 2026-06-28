@@ -49,23 +49,23 @@ https://github.com/Spandi99/unimatch.git
 
 Do not commit `.env`.
 
-Known Supabase public values used during development:
+Known Supabase public values used during development are stored only in local `.env` files and should not be committed.
 
 ```env
-EXPO_PUBLIC_SUPABASE_URL=https://pzqlplxxmcrwecsqrbxz.supabase.co
-EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_-_yIcUCR8NDIWc6RjLQjvA_M4KX-mv4
+EXPO_PUBLIC_SUPABASE_URL=...
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
 ```
 
 The auth redirect URL must match the machine running the auth callback server. On Windows it was:
 
 ```env
-EXPO_PUBLIC_AUTH_REDIRECT_URL=http://192.168.1.5:8789/auth-callback.html
+EXPO_PUBLIC_AUTH_REDIRECT_URL=http://YOUR_PC_LAN_IP:8789/auth-callback.html
 ```
 
 On the Raspberry Pi this should become something like:
 
 ```env
-EXPO_PUBLIC_AUTH_REDIRECT_URL=http://192.168.1.136:8789/auth-callback.html
+EXPO_PUBLIC_AUTH_REDIRECT_URL=http://YOUR_PI_LAN_IP:8789/auth-callback.html
 ```
 
 Also update Supabase Authentication URL Configuration to allow the Raspberry Pi redirect URLs:
@@ -153,15 +153,7 @@ cp .env.example .env
 nano .env
 ```
 
-Temporary exact `.env` contents for first Raspberry Pi setup:
-
-```env
-EXPO_PUBLIC_SUPABASE_URL=https://pzqlplxxmcrwecsqrbxz.supabase.co
-EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_-_yIcUCR8NDIWc6RjLQjvA_M4KX-mv4
-EXPO_PUBLIC_AUTH_REDIRECT_URL=http://192.168.1.136:8789/auth-callback.html
-```
-
-After `.env` is created locally on the Pi, remove this exact-value block from `HANDOFF.md` before continuing normal repo work. The `.env` file itself must stay uncommitted.
+Use the local development Supabase values from your private `.env`. The `.env` file itself must stay uncommitted.
 
 Install dependencies:
 
@@ -175,7 +167,19 @@ Run typecheck:
 npm run typecheck
 ```
 
-Until a Linux helper script exists, the likely manual services are:
+Run all local development services on Linux:
+
+```bash
+npm run dev:all:linux:lan
+```
+
+For web preview instead of Expo Go:
+
+```bash
+npm run dev:all:linux
+```
+
+The helper starts the OCR worker, auth callback server, ngrok and Expo. Manual service commands are:
 
 ```bash
 cd ocr-worker
@@ -199,6 +203,12 @@ If using ngrok:
 
 ```bash
 ngrok http 8788
+```
+
+ngrok requires a free account auth token. If it fails with `ERR_NGROK_4018`, get a token from `https://dashboard.ngrok.com/get-started/your-authtoken` and run once:
+
+```bash
+ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN
 ```
 
 Then copy the ngrok HTTPS URL into the Supabase secret:

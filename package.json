@@ -10,6 +10,8 @@
     "web": "expo start --web",
     "dev:all": "powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1",
     "dev:all:lan": "powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 -ExpoMode lan",
+    "dev:all:linux": "bash scripts/start-dev-linux.sh",
+    "dev:all:linux:lan": "bash scripts/start-dev-linux.sh --expo-mode lan",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

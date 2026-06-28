@@ -1,7 +1,22 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
-
 type ReviewRequest = {
   verificationRequestId?: string;
+};
+
+type SupabaseUser = {
+  id: string;
+};
+
+type VerificationRequestRow = {
+  id: string;
+  user_id: string;
+  legi_document_path: string | null;
+};
+
+type ProfileRow = {
+  name?: string | null;
+  birthdate?: string | null;
+  university?: string | null;
+  degree?: string | null;
 };
 
 type AiLegiResult = {
@@ -31,6 +46,9 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const OPENAI_TIMEOUT_MS = 45_000;
+const OCR_TIMEOUT_MS = 45_000;
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -52,40 +70,19 @@ Deno.serve(async (request) => {
     const authorization = request.headers.get("Authorization");
     if (!authorization) return json({ error: "Missing Authorization header" }, 401);
 
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authorization } },
-    });
-    const adminClient = createClient(supabaseUrl, serviceRoleKey);
-
-    const { data: userData, error: userError } = await userClient.auth.getUser();
-    if (userError || !userData.user) return json({ error: "Not signed in" }, 401);
+    const user = await getUser(supabaseUrl, anonKey, authorization);
+    if (!user) return json({ error: "Not signed in" }, 401);
 
     const body = await request.json() as ReviewRequest;
     if (!body.verificationRequestId) return json({ error: "Missing verificationRequestId" }, 400);
 
-    const { data: reviewRequest, error: requestError } = await adminClient
-      .from("verification_requests")
-      .select("id, user_id, legi_document_path")
-      .eq("id", body.verificationRequestId)
-      .single();
-
-    if (requestError || !reviewRequest) return json({ error: "Review request not found" }, 404);
-    if (reviewRequest.user_id !== userData.user.id) return json({ error: "Forbidden" }, 403);
+    const reviewRequest = await getVerificationRequest(supabaseUrl, serviceRoleKey, body.verificationRequestId);
+    if (!reviewRequest) return json({ error: "Review request not found" }, 404);
+    if (reviewRequest.user_id !== user.id) return json({ error: "Forbidden" }, 403);
     if (!reviewRequest.legi_document_path) return json({ error: "Missing Legi document path" }, 400);
 
-    const { data: imageBlob, error: downloadError } = await adminClient.storage
-      .from("verification-documents")
-      .download(reviewRequest.legi_document_path);
-
-    if (downloadError || !imageBlob) {
-      return json({ error: `Could not download Legi photo: ${downloadError?.message ?? "unknown error"}` }, 500);
-    }
-
-    const { data: profile } = await adminClient
-      .from("profiles")
-      .select("name, birthdate, university, degree")
-      .eq("id", reviewRequest.user_id)
-      .maybeSingle();
+    const imageBlob = await downloadStorageObject(supabaseUrl, serviceRoleKey, "verification-documents", reviewRequest.legi_document_path);
+    const profile = await getProfile(supabaseUrl, serviceRoleKey, reviewRequest.user_id);
 
     const imageBase64 = await blobToBase64(imageBlob);
     const aiResult = reviewMode === "openai"
@@ -113,28 +110,19 @@ Deno.serve(async (request) => {
       `Confidence: ${aiResult.confidence}`,
     ].filter(Boolean).join("\n");
 
-    const { error: checksError } = await adminClient
-      .from("legi_review_checks")
-      .upsert({
-        verification_request_id: reviewRequest.id,
-        has_face_photo: aiResult.has_face_photo,
-        has_birthdate: aiResult.has_birthdate,
-        has_first_and_last_name: aiResult.has_first_and_last_name,
-        has_faculty: aiResult.has_faculty,
-        has_student_number: aiResult.has_student_number,
-        student_number: aiResult.student_number,
-        reviewer_notes: notes,
-        reviewed_at: new Date().toISOString(),
-      });
+    await upsertLegiReviewChecks(supabaseUrl, serviceRoleKey, {
+      verification_request_id: reviewRequest.id,
+      has_face_photo: aiResult.has_face_photo,
+      has_birthdate: aiResult.has_birthdate,
+      has_first_and_last_name: aiResult.has_first_and_last_name,
+      has_faculty: aiResult.has_faculty,
+      has_student_number: aiResult.has_student_number,
+      student_number: aiResult.student_number,
+      reviewer_notes: notes,
+      reviewed_at: new Date().toISOString(),
+    });
 
-    if (checksError) return json({ error: `Could not save Legi checks: ${checksError.message}` }, 500);
-
-    const { error: statusError } = await adminClient
-      .from("verification_requests")
-      .update({ status, reviewed_at: new Date().toISOString() })
-      .eq("id", reviewRequest.id);
-
-    if (statusError) return json({ error: `Could not update review status: ${statusError.message}` }, 500);
+    await updateVerificationRequestStatus(supabaseUrl, serviceRoleKey, reviewRequest.id, status);
 
     return json({
       status,
@@ -150,12 +138,171 @@ Deno.serve(async (request) => {
       },
     });
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : "Unknown error" }, 500);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("review-legi failed", {
+      message,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    return json({ error: message }, 500);
   }
 });
 
+async function getUser(supabaseUrl: string, anonKey: string, authorization: string): Promise<SupabaseUser | null> {
+  const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+    headers: {
+      "apikey": anonKey,
+      "Authorization": authorization,
+    },
+  });
+
+  if (response.status === 401 || response.status === 403) return null;
+  if (!response.ok) {
+    throw new Error(`Could not read signed-in user: ${response.status} ${await response.text()}`);
+  }
+
+  const user = await response.json() as Partial<SupabaseUser>;
+  return typeof user.id === "string" ? { id: user.id } : null;
+}
+
+async function getVerificationRequest(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  verificationRequestId: string,
+): Promise<VerificationRequestRow | null> {
+  const rows = await getRows<VerificationRequestRow>(
+    supabaseUrl,
+    serviceRoleKey,
+    "verification_requests",
+    {
+      select: "id,user_id,legi_document_path",
+      id: `eq.${verificationRequestId}`,
+      limit: "1",
+    },
+  );
+
+  return rows[0] ?? null;
+}
+
+async function getProfile(supabaseUrl: string, serviceRoleKey: string, userId: string): Promise<ProfileRow | null> {
+  const rows = await getRows<ProfileRow>(
+    supabaseUrl,
+    serviceRoleKey,
+    "profiles",
+    {
+      select: "name,birthdate,university,degree",
+      id: `eq.${userId}`,
+      limit: "1",
+    },
+  );
+
+  return rows[0] ?? null;
+}
+
+async function getRows<T>(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  table: string,
+  query: Record<string, string>,
+): Promise<T[]> {
+  const url = new URL(`${supabaseUrl}/rest/v1/${table}`);
+  for (const [key, value] of Object.entries(query)) {
+    url.searchParams.set(key, value);
+  }
+
+  const response = await fetch(url, {
+    headers: supabaseRestHeaders(serviceRoleKey),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Could not query ${table}: ${response.status} ${await response.text()}`);
+  }
+
+  return await response.json() as T[];
+}
+
+async function downloadStorageObject(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  bucket: string,
+  path: string,
+): Promise<Blob> {
+  const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+  const response = await fetch(`${supabaseUrl}/storage/v1/object/${encodeURIComponent(bucket)}/${encodedPath}`, {
+    headers: supabaseRestHeaders(serviceRoleKey),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Could not download Legi photo: ${response.status} ${await response.text()}`);
+  }
+
+  return await response.blob();
+}
+
+async function upsertLegiReviewChecks(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  row: {
+    verification_request_id: string;
+    has_face_photo: boolean;
+    has_birthdate: boolean;
+    has_first_and_last_name: boolean;
+    has_faculty: boolean;
+    has_student_number: boolean;
+    student_number: string | null;
+    reviewer_notes: string;
+    reviewed_at: string;
+  },
+) {
+  const url = new URL(`${supabaseUrl}/rest/v1/legi_review_checks`);
+  url.searchParams.set("on_conflict", "verification_request_id");
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      ...supabaseRestHeaders(serviceRoleKey),
+      "Content-Type": "application/json",
+      "Prefer": "resolution=merge-duplicates",
+    },
+    body: JSON.stringify(row),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Could not save Legi checks: ${response.status} ${await response.text()}`);
+  }
+}
+
+async function updateVerificationRequestStatus(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  verificationRequestId: string,
+  status: "verified" | "rejected",
+) {
+  const url = new URL(`${supabaseUrl}/rest/v1/verification_requests`);
+  url.searchParams.set("id", `eq.${verificationRequestId}`);
+
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      ...supabaseRestHeaders(serviceRoleKey),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ status, reviewed_at: new Date().toISOString() }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Could not update review status: ${response.status} ${await response.text()}`);
+  }
+}
+
+function supabaseRestHeaders(serviceRoleKey: string) {
+  return {
+    "apikey": serviceRoleKey,
+    "Authorization": `Bearer ${serviceRoleKey}`,
+  };
+}
+
 async function analyzeLegiWithOpenAi(apiKey: string, model: string, imageBase64: string): Promise<AiLegiResult> {
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const response = await fetchWithTimeout("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
@@ -221,7 +368,7 @@ async function analyzeLegiWithOpenAi(apiKey: string, model: string, imageBase64:
         },
       },
     }),
-  });
+  }, OPENAI_TIMEOUT_MS, "OpenAI Legi review");
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -247,11 +394,11 @@ async function analyzeLegiWithTesseract(
   imageSize: number,
   profile: { name?: string | null; birthdate?: string | null; university?: string | null; degree?: string | null } | null,
 ): Promise<AiLegiResult> {
-  const response = await fetch(`${ocrServiceUrl.replace(/\/$/, "")}/ocr`, {
+  const response = await fetchWithTimeout(`${ocrServiceUrl.replace(/\/$/, "")}/ocr`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ imageBase64 }),
-  });
+  }, OCR_TIMEOUT_MS, "Tesseract OCR service");
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -431,6 +578,22 @@ function hasFacultyText(text: string, degree: string | null, university: string 
     const parts = value?.toLowerCase().split(/\W+/).filter((part) => part.length >= 4) ?? [];
     return parts.length > 0 && parts.some((part) => haystack.includes(part));
   });
+}
+
+async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number, label: string) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)} seconds`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 function json(body: unknown, status = 200) {

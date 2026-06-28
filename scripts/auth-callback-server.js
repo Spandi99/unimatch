@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 const port = Number(process.env.AUTH_CALLBACK_PORT || 8789);
+const callbackHost = process.env.UNIMATCH_AUTH_CALLBACK_HOST;
 const publicDir = path.join(__dirname, "..", "public");
 const pages = new Map([
   ["/auth-callback.html", path.join(publicDir, "auth-callback.html")],
@@ -37,6 +38,10 @@ const server = http.createServer((request, response) => {
 server.listen(port, "0.0.0.0", () => {
   console.log(`UniMatch auth callback page: http://localhost:${port}/auth-callback.html`);
   console.log(`UniMatch password reset page: http://localhost:${port}/reset-password.html`);
+  if (callbackHost) {
+    console.log(`UniMatch auth callback LAN page: http://${callbackHost}:${port}/auth-callback.html`);
+    console.log(`UniMatch password reset LAN page: http://${callbackHost}:${port}/reset-password.html`);
+  }
 });
 
 function injectSupabaseEnv(html) {

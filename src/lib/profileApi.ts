@@ -31,8 +31,14 @@ export type AutomatedReviewResult = {
   checks: LegiReviewChecks;
 };
 
+const AUTOMATED_REVIEW_TIMEOUT_MS = 45_000;
+
 export async function signInWithEmail(email: string, password: string) {
   return supabase.auth.signInWithPassword({ email, password });
+}
+
+export async function signInAnonymously() {
+  return supabase.auth.signInAnonymously();
 }
 
 export async function signUpWithEmail(email: string, password: string, emailRedirectTo?: string) {
@@ -100,11 +106,15 @@ export async function createVerificationRequest(userId: string, legiUri: string)
 }
 
 export async function reviewVerificationAutomatically(verificationRequestId: string): Promise<AutomatedReviewResult> {
-  const result = await supabase.functions.invoke<AutomatedReviewResult>("review-legi", {
-    body: { verificationRequestId },
-  });
+  const result = await withTimeout(
+    supabase.functions.invoke<AutomatedReviewResult>("review-legi", {
+      body: { verificationRequestId },
+    }),
+    AUTOMATED_REVIEW_TIMEOUT_MS,
+    "Legi review is taking too long. The upload was saved; refresh the review status in a moment or check the OCR service URL.",
+  );
 
-  if (result.error) throw new Error(`Legi review failed: ${result.error.message}`);
+  if (result.error) throw new Error(`Legi review failed: ${await formatFunctionError(result.error)}`);
   if (!result.data) throw new Error("Legi review failed: empty response");
   return result.data;
 }
@@ -185,11 +195,54 @@ async function readImageBody(photoUri: string) {
   return decode(base64);
 }
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 async function withStage<T>(stage: string, action: () => Promise<T>) {
   try {
     return await action();
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     throw new Error(`${stage} failed: ${message}`);
+  }
+}
+
+async function formatFunctionError(error: unknown) {
+  const response = typeof error === "object" && error !== null && "context" in error
+    ? (error as { context?: unknown }).context
+    : null;
+
+  if (response instanceof Response) {
+    const body = await readFunctionErrorBody(response);
+    const status = `${response.status} ${response.statusText}`.trim();
+    return body ? `${status}: ${body}` : status;
+  }
+
+  return error instanceof Error ? error.message : "Unknown function error";
+}
+
+async function readFunctionErrorBody(response: Response) {
+  try {
+    const contentType = response.headers.get("content-type") ?? "";
+    const responseClone = response.clone();
+    if (contentType.includes("application/json")) {
+      const json = await responseClone.json();
+      if (typeof json?.error === "string") return json.error;
+      return JSON.stringify(json);
+    }
+
+    return await responseClone.text();
+  } catch {
+    return "";
   }
 }
