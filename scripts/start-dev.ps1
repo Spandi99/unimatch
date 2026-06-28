@@ -11,7 +11,20 @@ $root = Split-Path -Parent $PSScriptRoot
 $ocrWorker = Join-Path $root "ocr-worker"
 $npmCache = Join-Path $root ".npm-cache"
 $authCallbackScript = Join-Path $root "scripts\auth-callback-server.js"
-$ngrokCommand = if (Get-Command "ngrok" -ErrorAction SilentlyContinue) { "ngrok http 8788" } else { "npx.cmd ngrok http 8788" }
+$globalNgrok = Get-Command "ngrok" -ErrorAction SilentlyContinue
+$ngrokCommand = if ($globalNgrok) { "ngrok http 8788" } else { "npx.cmd ngrok http 8788" }
+if ($globalNgrok) {
+  $ngrokSupportsConfig = $false
+  try {
+    & ngrok config --help *> $null
+    $ngrokSupportsConfig = $LASTEXITCODE -eq 0
+  } catch {
+    $ngrokSupportsConfig = $false
+  }
+  $ngrokAuthCommand = if ($ngrokSupportsConfig) { "ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN" } else { "ngrok authtoken YOUR_NGROK_AUTHTOKEN" }
+} else {
+  $ngrokAuthCommand = "npx.cmd ngrok authtoken YOUR_NGROK_AUTHTOKEN"
+}
 $expoCommand = if ($ExpoMode -eq "lan") { "npx.cmd expo start --host lan --port 8081 --clear" } else { "npx.cmd expo start --web --port 8081 --clear" }
 
 Write-Host ""
@@ -54,7 +67,7 @@ if ($NoNgrok) {
   Write-Host ""
   Write-Host "ngrok requires a free account auth token before it can start a tunnel." -ForegroundColor Yellow
   Write-Host "If this step fails with ERR_NGROK_4018, run once:"
-  Write-Host "  ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN"
+  Write-Host "  $ngrokAuthCommand"
   Write-Host "Get the token from: https://dashboard.ngrok.com/get-started/your-authtoken"
   Write-Host "To start everything except ngrok, run: .\scripts\start-dev.ps1 -NoNgrok"
   Write-Host ""

@@ -12,6 +12,7 @@
     "dev:all:lan": "powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 -ExpoMode lan",
     "dev:all:linux": "bash scripts/start-dev-linux.sh",
     "dev:all:linux:lan": "bash scripts/start-dev-linux.sh --expo-mode lan",
+    "dev:all:linux:tunnel": "bash scripts/start-dev-linux.sh --expo-mode tunnel",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -31,6 +32,7 @@
     "react-native-web": "^0.21.2"
   },
   "devDependencies": {
+    "@expo/ngrok": "^4.1.3",
     "@types/react": "~19.1.10",
     "typescript": "^5.8.3"
   }

@@ -4,7 +4,7 @@
     "slug": "unimatch",
     "version": "0.1.0",
     "orientation": "portrait",
-    "icon": "./logo.png",
+    "icon": "./Logo_1.png",
     "scheme": "unimatch",
     "userInterfaceStyle": "automatic",
     "ios": {

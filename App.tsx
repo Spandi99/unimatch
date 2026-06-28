@@ -87,7 +87,7 @@ const pendingSignupEmailKey = "unimatch.pendingSignupEmail";
 const pendingSignupPasswordKey = "unimatch.pendingSignupPassword";
 const locationPromptDismissedKey = "unimatch.locationPromptDismissed";
 const enableTestAuth = process.env.EXPO_PUBLIC_ENABLE_TEST_AUTH === "true";
-const logoSource = require("./logo.png");
+const logoSource = require("./Logo_1.png");
 const institutionGroups = [
   {
     title: "Universities in Bern",

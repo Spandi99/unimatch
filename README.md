@@ -111,6 +111,14 @@ For native device preview without the helper script:
 npx.cmd expo start --host lan --port 8081 --clear
 ```
 
+For a phone on a different network, start Expo through its tunnel mode:
+
+```bash
+npm run dev:all:linux:tunnel
+```
+
+Scan the QR code printed by Expo with Expo Go. Email confirmation still needs a redirect URL that the phone can reach; for quickest remote testing, enable `EXPO_PUBLIC_ENABLE_TEST_AUTH=true`.
+
 ### iPhone / Android on a PC
 
 On Windows, Apple's real iPhone Simulator is not available because it requires Xcode on macOS.
@@ -133,7 +141,7 @@ When ngrok starts, copy the `https://...ngrok-free.app` URL into Supabase Secret
 ngrok requires a free account auth token. If it fails with `ERR_NGROK_4018`, get a token from `https://dashboard.ngrok.com/get-started/your-authtoken` and run:
 
 ```bash
-ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN
+npx ngrok authtoken YOUR_NGROK_AUTHTOKEN
 ```
 
 ### Raspberry Pi / Linux
@@ -158,6 +166,14 @@ npm install --no-audit --no-fund
 npm run dev:all:linux:lan
 ```
 
+If the phone is not in the same network as the Pi, use Expo tunnel mode instead:
+
+```bash
+npm run dev:all:linux:tunnel
+```
+
+This prints an Expo Go QR code that works across networks. The Pi still uses its LAN URL for the local email confirmation helper, so remote testers should use anonymous test auth or you need to expose the auth callback page with a separate public URL and add it to Supabase Redirect URLs.
+
 For web preview on the Pi:
 
 ```bash
@@ -174,10 +190,10 @@ The Linux helper starts:
 ngrok requires a free account auth token. If it fails with `ERR_NGROK_4018`, get a token from `https://dashboard.ngrok.com/get-started/your-authtoken` and run:
 
 ```bash
-ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN
+npx ngrok authtoken YOUR_NGROK_AUTHTOKEN
 ```
 
-If `ngrok` is not installed globally, the script falls back to `npx ngrok http 8788`. Copy the `https://...ngrok-free.app` URL into Supabase Secret `LEGI_OCR_SERVICE_URL`.
+If you installed a newer global `ngrok` CLI from the ngrok website, its token command may instead be `ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN`. The helper prints the command that matches the CLI it is about to use. Copy the `https://...ngrok-free.app` URL into Supabase Secret `LEGI_OCR_SERVICE_URL`.
 
 To run local services without a tunnel:
 

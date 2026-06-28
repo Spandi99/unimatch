@@ -29,13 +29,13 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h|--help)
       cat <<'EOF'
-Usage: scripts/start-dev-linux.sh [--expo-mode web|lan] [--no-ngrok] [--dry-run]
+Usage: scripts/start-dev-linux.sh [--expo-mode web|lan|tunnel] [--no-ngrok] [--dry-run]
 
 Starts UniMatch development services on Linux:
   - OCR worker on port 8788
   - auth callback server on port 8789
   - ngrok tunnel for the OCR worker, unless --no-ngrok is set
-  - Expo on port 8081
+  - Expo on port 8081, or through an Expo tunnel when --expo-mode tunnel is used
 EOF
       exit 0
       ;;
@@ -46,8 +46,8 @@ EOF
   esac
 done
 
-if [[ "$expo_mode" != "web" && "$expo_mode" != "lan" ]]; then
-  echo "Invalid --expo-mode value: $expo_mode. Use web or lan." >&2
+if [[ "$expo_mode" != "web" && "$expo_mode" != "lan" && "$expo_mode" != "tunnel" ]]; then
+  echo "Invalid --expo-mode value: $expo_mode. Use web, lan or tunnel." >&2
   exit 1
 fi
 
@@ -152,7 +152,7 @@ configure_auth_redirect_url() {
   exit 1
 }
 
-print_expo_qr() {
+print_expo_lan_qr() {
   if [[ "$expo_mode" != "lan" || "$dry_run" == "true" ]]; then
     return
   fi
@@ -183,23 +183,34 @@ start_ngrok() {
     return
   fi
 
-  cat <<'EOF'
+  local local_ngrok="$root/.tools/ngrok/ngrok"
+  local auth_token_command="npx ngrok authtoken YOUR_NGROK_AUTHTOKEN"
+  local ngrok_start_command=(env NPM_CONFIG_CACHE="$npm_cache" npx ngrok http 8788 --log stdout --log-format logfmt)
+
+  if [[ -x "$local_ngrok" ]]; then
+    auth_token_command="$local_ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN"
+    ngrok_start_command=("$local_ngrok" http 8788 --log stdout --log-format logfmt)
+  elif command -v ngrok >/dev/null 2>&1; then
+    if ngrok config --help >/dev/null 2>&1; then
+      auth_token_command="ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN"
+    else
+      auth_token_command="ngrok authtoken YOUR_NGROK_AUTHTOKEN"
+    fi
+    ngrok_start_command=(ngrok http 8788 --log stdout --log-format logfmt)
+  fi
+
+  cat <<EOF
 
 ngrok requires a free account auth token before it can start a tunnel.
 If this step fails with ERR_NGROK_4018, run once:
 
-  ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN
+  $auth_token_command
 
 Get the token from: https://dashboard.ngrok.com/get-started/your-authtoken
 To start everything except ngrok, run: npm run dev:all:linux -- --no-ngrok
 EOF
 
-  if command -v ngrok >/dev/null 2>&1; then
-    start_service "ngrok" ngrok http 8788 --log stdout --log-format logfmt
-    return
-  fi
-
-  start_service "ngrok" env NPM_CONFIG_CACHE="$npm_cache" npx ngrok http 8788 --log stdout --log-format logfmt
+  start_service "ngrok" "${ngrok_start_command[@]}"
 }
 
 if [[ ! -f "$root/.env" ]]; then
@@ -227,8 +238,9 @@ Important:
 1. Copy the https://... forwarding URL from the ngrok output.
 2. Set it in Supabase as LEGI_OCR_SERVICE_URL.
 3. If review-legi changed, deploy it with: npx supabase functions deploy review-legi
-4. For iPhone/Android through Expo Go, run: npm run dev:all:linux:lan
-5. Email confirmation page runs on the Auth redirect URL printed above.
+4. For iPhone/Android in the same Wi-Fi, run: npm run dev:all:linux:lan
+5. For iPhone/Android from another network, run: npm run dev:all:linux:tunnel
+6. Email confirmation page runs on the Auth redirect URL printed above.
 
 Press Ctrl+C to stop all services.
 EOF
@@ -240,18 +252,25 @@ Services are running. Keep this terminal open.
 Important:
 1. ngrok was skipped, so Supabase Cloud cannot call the local OCR worker.
 2. Use LEGI_REVIEW_MODE=demo or set LEGI_OCR_SERVICE_URL to a deployed/public OCR worker.
-3. For iPhone/Android through Expo Go, run: npm run dev:all:linux:lan
-4. Email confirmation page runs on the Auth redirect URL printed above.
+3. For iPhone/Android in the same Wi-Fi, run: npm run dev:all:linux:lan
+4. For iPhone/Android from another network, run: npm run dev:all:linux:tunnel
+5. Email confirmation page runs on the Auth redirect URL printed above.
 
 Press Ctrl+C to stop all services.
 EOF
 fi
 
-if [[ "$expo_mode" == "lan" ]]; then
-  start_service "Expo" env NPM_CONFIG_CACHE="$npm_cache" EXPO_NO_TELEMETRY=1 npx expo start --host lan --port 8081 --clear
-else
-  start_service "Expo" env NPM_CONFIG_CACHE="$npm_cache" EXPO_NO_TELEMETRY=1 npx expo start --web --port 8081 --clear
-fi
+case "$expo_mode" in
+  lan)
+    start_service "Expo" env NPM_CONFIG_CACHE="$npm_cache" EXPO_NO_TELEMETRY=1 npx expo start --host lan --port 8081 --clear
+    ;;
+  tunnel)
+    start_service "Expo tunnel" env NPM_CONFIG_CACHE="$npm_cache" EXPO_NO_TELEMETRY=1 npx expo start --tunnel --port 8081 --clear
+    ;;
+  web)
+    start_service "Expo" env NPM_CONFIG_CACHE="$npm_cache" EXPO_NO_TELEMETRY=1 npx expo start --web --port 8081 --clear
+    ;;
+esac
 
 if [[ "$dry_run" == "true" ]]; then
   echo ""
@@ -259,6 +278,6 @@ if [[ "$dry_run" == "true" ]]; then
   exit 0
 fi
 
-print_expo_qr
+print_expo_lan_qr
 
 wait
