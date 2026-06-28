@@ -78,6 +78,7 @@ const rememberMeKey = "unimatch.rememberMe";
 const pendingSignupEmailKey = "unimatch.pendingSignupEmail";
 const pendingSignupPasswordKey = "unimatch.pendingSignupPassword";
 const enableTestAuth = process.env.EXPO_PUBLIC_ENABLE_TEST_AUTH === "true";
+const logoSource = require("./logo.png");
 const institutionGroups = [
   {
     title: "Universities in Bern",
@@ -773,9 +774,7 @@ export default function App() {
         {isBooting && (
           <View style={styles.centerScreen}>
             <View style={styles.brandRow}>
-              <View style={styles.brandIcon}>
-                <Text style={styles.brandIconText}>U</Text>
-              </View>
+              <LogoMark style={styles.brandIcon} imageStyle={styles.brandLogo} />
               <Text style={styles.brand}>UniMatch</Text>
             </View>
             <Text style={styles.caption}>Checking your session...</Text>
@@ -829,9 +828,7 @@ export default function App() {
         {!isBooting && step === "confirm-email" && (
           <ScrollView style={styles.flex} contentContainerStyle={styles.centerScreen} keyboardShouldPersistTaps="handled">
             <View style={styles.brandRow}>
-              <View style={styles.brandIcon}>
-                <Text style={styles.brandIconText}>U</Text>
-              </View>
+              <LogoMark style={styles.brandIcon} imageStyle={styles.brandLogo} />
               <Text style={styles.brand}>UniMatch</Text>
             </View>
 
@@ -879,9 +876,7 @@ export default function App() {
         {!isBooting && step === "auth-callback" && (
           <View style={styles.centerScreen}>
             <View style={styles.brandRow}>
-              <View style={styles.brandIcon}>
-                <Text style={styles.brandIconText}>U</Text>
-              </View>
+              <LogoMark style={styles.brandIcon} imageStyle={styles.brandLogo} />
               <Text style={styles.brand}>UniMatch</Text>
             </View>
             <View style={styles.section}>
@@ -1317,9 +1312,7 @@ function AuthHero(props: { compact: boolean }) {
   return (
     <View style={[styles.authHero, props.compact && styles.authHeroCompact]}>
       <View style={styles.brandRow}>
-        <View style={styles.brandIcon}>
-          <Text style={styles.brandIconText}>U</Text>
-        </View>
+        <LogoMark style={styles.brandIcon} imageStyle={styles.brandLogo} />
         <Text style={styles.brand}>UniMatch</Text>
       </View>
       {!props.compact ? (
@@ -1332,6 +1325,14 @@ function AuthHero(props: { compact: boolean }) {
           <BernScene />
         </>
       ) : null}
+    </View>
+  );
+}
+
+function LogoMark(props: { style: StyleProp<ViewStyle>; imageStyle: StyleProp<ImageStyle> }) {
+  return (
+    <View style={props.style}>
+      <Image source={logoSource} style={props.imageStyle} resizeMode="contain" />
     </View>
   );
 }
@@ -1448,9 +1449,7 @@ function HotspotsScreen(props: {
   return (
     <>
       <View style={styles.hotspotHero}>
-        <View style={styles.hotspotPin}>
-          <Text style={styles.hotspotPinText}>U</Text>
-        </View>
+        <LogoMark style={styles.hotspotPin} imageStyle={styles.hotspotPinLogo} />
         <View style={styles.profileCopy}>
           <Text style={styles.titleLeft}>Hotspots</Text>
           <Text style={styles.caption}>Choose where you want to be visible on campus.</Text>
@@ -1538,9 +1537,7 @@ function DiscoverCard(props: { profile: DemoProfile; remaining: number; pulse: A
 function EmptyState(props: { title: string; body: string }) {
   return (
     <View style={styles.emptyState}>
-      <View style={styles.emptyMark}>
-        <Text style={styles.emptyMarkText}>U</Text>
-      </View>
+      <LogoMark style={styles.emptyMark} imageStyle={styles.emptyMarkLogo} />
       <Text style={styles.title}>{props.title}</Text>
       <Text style={styles.caption}>{props.body}</Text>
     </View>
@@ -1550,9 +1547,7 @@ function EmptyState(props: { title: string; body: string }) {
 function EmptyDiscover(props: { onBrowseHotspots: () => void }) {
   return (
     <View style={styles.emptyState}>
-      <View style={styles.emptyMark}>
-        <Text style={styles.emptyMarkText}>U</Text>
-      </View>
+      <LogoMark style={styles.emptyMark} imageStyle={styles.emptyMarkLogo} />
       <Text style={styles.title}>No profiles in Discover</Text>
       <Text style={styles.caption}>
         Real nearby profiles will appear here after discovery data is connected.
@@ -1706,8 +1701,8 @@ const styles = StyleSheet.create({
   screen: { padding: theme.screenPadding, gap: 16 },
   screenWithTabs: { padding: theme.screenPadding, paddingBottom: 104, gap: 18 },
   brandRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
-  brandIcon: { width: 32, height: 32, borderRadius: 12, backgroundColor: theme.accent, alignItems: "center", justifyContent: "center" },
-  brandIconText: { color: "#fff", fontWeight: "800" },
+  brandIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  brandLogo: { width: 34, height: 34 },
   brand: { fontSize: 23, fontWeight: "700", color: theme.text },
   authHero: { gap: 18, alignItems: "stretch" },
   authHeroCompact: { gap: 0 },
@@ -1796,8 +1791,8 @@ const styles = StyleSheet.create({
   eyeSlash: { position: "absolute", width: 30, height: 2, borderRadius: 999, backgroundColor: "#777777", transform: [{ rotate: "-32deg" }] },
   invisibleState: { minHeight: 320, backgroundColor: theme.elevated, borderRadius: 24, padding: 24, alignItems: "center", justifyContent: "center", gap: 14, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 14, shadowOffset: { width: 0, height: 7 }, elevation: 1 },
   hotspotHero: { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: theme.elevated, borderRadius: 24, padding: 18, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 2 },
-  hotspotPin: { width: 54, height: 54, borderRadius: 20, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center" },
-  hotspotPinText: { color: theme.accentDark, fontSize: 22, fontWeight: "900" },
+  hotspotPin: { width: 54, height: 54, borderRadius: 20, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  hotspotPinLogo: { width: 54, height: 54 },
   filterRow: { gap: 8, paddingRight: 16 },
   filterChip: { height: 34, borderRadius: 999, backgroundColor: theme.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, paddingHorizontal: 14, alignItems: "center", justifyContent: "center" },
   filterChipActive: { backgroundColor: theme.accent },
@@ -1879,8 +1874,8 @@ const styles = StyleSheet.create({
   requestButtonLarge: { flex: 1.25, height: 54, borderRadius: 999, backgroundColor: theme.accent, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 2 },
   requestButtonLargeText: { color: "#fff", fontSize: 15, fontWeight: "700" },
   emptyState: { minHeight: 380, backgroundColor: theme.elevated, borderRadius: 24, padding: 24, alignItems: "center", justifyContent: "center", gap: 14, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 2 },
-  emptyMark: { width: 64, height: 64, borderRadius: 22, backgroundColor: theme.surface, alignItems: "center", justifyContent: "center" },
-  emptyMarkText: { color: theme.text, fontSize: 24, fontWeight: "800" },
+  emptyMark: { width: 64, height: 64, borderRadius: 22, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  emptyMarkLogo: { width: 64, height: 64 },
   requestCard: { backgroundColor: theme.elevated, borderRadius: 18, padding: 14, gap: 10, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 1 },
   requestHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   pendingPill: { alignSelf: "flex-start", backgroundColor: theme.surface, color: theme.muted, borderRadius: 999, overflow: "hidden", paddingHorizontal: 9, paddingVertical: 5, fontSize: 12, fontWeight: "800" },
