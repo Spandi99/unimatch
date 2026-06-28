@@ -1,4 +1,5 @@
 import * as ImagePicker from "expo-image-picker";
+import * as Location from "expo-location";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -28,6 +29,8 @@ import {
   VerificationReview,
   createVerificationRequest,
   getLatestVerificationReview,
+  saveNearbySession,
+  clearNearbySession,
   resendConfirmationEmail,
   reviewVerificationAutomatically,
   saveProfile,
@@ -51,6 +54,10 @@ const genderOptions: Array<{ label: string; value: GenderIdentity }> = [
 ];
 
 const meetOptions = ["women", "men", "non_binary_people", "everyone"];
+type GeoPoint = {
+  latitude: number;
+  longitude: number;
+};
 type DemoProfile = {
   initials: string;
   name: string;
@@ -58,6 +65,7 @@ type DemoProfile = {
   uni: string;
   degree: string;
   distance: string;
+  coordinate?: GeoPoint;
   place: string;
   bio: string;
   photo?: number;
@@ -65,18 +73,19 @@ type DemoProfile = {
 const demoProfiles: DemoProfile[] = [];
 const hotspotCategories = ["All", "Libraries", "Cafes", "Mensa", "Campus"];
 const hotspots = [
-  { name: "Von-Roll-Bibliothek", category: "Libraries", status: "Jetzt viele da", distance: "~120 m", people: 34, tone: "busy" },
-  { name: "Unitobler Bibliothek", category: "Libraries", status: "Ruhig aktiv", distance: "~280 m", people: 18, tone: "active" },
-  { name: "Bern main library", category: "Libraries", status: "Gute Lernstimmung", distance: "~450 m", people: 26, tone: "active" },
-  { name: "Mensa VonRoll", category: "Mensa", status: "Mittagspause", distance: "~600 m", people: 41, tone: "warm" },
-  { name: "Grosse Schanze cafe", category: "Cafes", status: "Gemutlich", distance: "~850 m", people: 12, tone: "warm" },
-  { name: "Muesmatt campus", category: "Campus", status: "Nach Vorlesungen", distance: "~1.2 km", people: 22, tone: "active" },
+  { name: "Von-Roll-Bibliothek", category: "Libraries", status: "Jetzt viele da", distance: "~120 m", coordinate: { latitude: 46.9529, longitude: 7.4248 }, people: 34, tone: "busy" },
+  { name: "Unitobler Bibliothek", category: "Libraries", status: "Ruhig aktiv", distance: "~280 m", coordinate: { latitude: 46.9511, longitude: 7.4354 }, people: 18, tone: "active" },
+  { name: "Bern main library", category: "Libraries", status: "Gute Lernstimmung", distance: "~450 m", coordinate: { latitude: 46.9505, longitude: 7.4396 }, people: 26, tone: "active" },
+  { name: "Mensa VonRoll", category: "Mensa", status: "Mittagspause", distance: "~600 m", coordinate: { latitude: 46.9533, longitude: 7.4242 }, people: 41, tone: "warm" },
+  { name: "Grosse Schanze cafe", category: "Cafes", status: "Gemutlich", distance: "~850 m", coordinate: { latitude: 46.9486, longitude: 7.4382 }, people: 12, tone: "warm" },
+  { name: "Muesmatt campus", category: "Campus", status: "Nach Vorlesungen", distance: "~1.2 km", coordinate: { latitude: 46.9536, longitude: 7.4294 }, people: 22, tone: "active" },
 ];
 const appTabs = ["Nearby", "Hotspots", "Discover", "Matches", "Profile"];
 const requestLifetimeHours = 48;
 const rememberMeKey = "unimatch.rememberMe";
 const pendingSignupEmailKey = "unimatch.pendingSignupEmail";
 const pendingSignupPasswordKey = "unimatch.pendingSignupPassword";
+const locationPromptDismissedKey = "unimatch.locationPromptDismissed";
 const enableTestAuth = process.env.EXPO_PUBLIC_ENABLE_TEST_AUTH === "true";
 const logoSource = require("./logo.png");
 const institutionGroups = [
@@ -134,6 +143,11 @@ export default function App() {
   const [appTab, setAppTab] = useState(0);
   const [showVerifiedBanner, setShowVerifiedBanner] = useState(false);
   const [isNearbyVisible, setIsNearbyVisible] = useState(true);
+  const [locationPermission, setLocationPermission] = useState<"unknown" | "granted" | "denied" | "undetermined">("unknown");
+  const [showLocationPrompt, setShowLocationPrompt] = useState(false);
+  const [isRequestingLocation, setIsRequestingLocation] = useState(false);
+  const [locationMessage, setLocationMessage] = useState("");
+  const [userLocation, setUserLocation] = useState<GeoPoint | null>(null);
   const [selectedProfile, setSelectedProfile] = useState<number | null>(null);
   const [requestProfile, setRequestProfile] = useState<number | null>(null);
   const [requestDraft, setRequestDraft] = useState("");
@@ -162,7 +176,12 @@ export default function App() {
   const selectedDemoProfile = selectedProfile !== null ? demoProfiles[selectedProfile] : null;
   const requestDemoProfile = requestProfile !== null ? demoProfiles[requestProfile] : null;
   const activeOutgoingRequests = outgoingRequests.filter((request) => requestHoursLeft(request.createdAt) > 0);
-  const visibleHotspots = hotspots.filter((hotspot) => hotspotFilter === "All" || hotspot.category === hotspotFilter);
+  const visibleHotspots = hotspots
+    .filter((hotspot) => hotspotFilter === "All" || hotspot.category === hotspotFilter)
+    .map((hotspot) => ({
+      ...hotspot,
+      distance: getDistanceText(userLocation, hotspot.coordinate, hotspot.distance),
+    }));
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -286,6 +305,111 @@ export default function App() {
     animation.start();
     return () => animation.stop();
   }, [pulse]);
+
+  useEffect(() => {
+    if (step !== "home") return;
+
+    refreshLocationPermission().catch(console.warn);
+  }, [step]);
+
+  async function refreshLocationPermission() {
+    const permission = await Location.getForegroundPermissionsAsync();
+    const status = normalizeLocationStatus(permission.status);
+    setLocationPermission(status);
+
+    const dismissed = await AsyncStorage.getItem(locationPromptDismissedKey);
+    setShowLocationPrompt(status === "undetermined" && dismissed !== "true");
+    if (status === "granted") {
+      updateCurrentLocation(false).catch(console.warn);
+    }
+  }
+
+  async function requestLocationPermission() {
+    setLocationMessage("");
+    setIsRequestingLocation(true);
+    try {
+      await AsyncStorage.removeItem(locationPromptDismissedKey);
+
+      let permission = await Location.getForegroundPermissionsAsync();
+      if (permission.status !== "granted") {
+        permission = await Location.requestForegroundPermissionsAsync();
+      }
+
+      const status = normalizeLocationStatus(permission.status);
+      setLocationPermission(status);
+
+      if (status !== "granted") {
+        await AsyncStorage.setItem(locationPromptDismissedKey, "true");
+        setShowLocationPrompt(false);
+        setLocationMessage("Location is not enabled. You can try again here or allow it in your browser/device settings.");
+        return;
+      }
+
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) throw new Error("Please sign in again before sharing your location.");
+
+      const currentLocation = await updateCurrentLocation();
+      await saveNearbySession(data.user.id, currentLocation.latitude, currentLocation.longitude, selectedHotspot);
+
+      setShowLocationPrompt(false);
+      setIsNearbyVisible(true);
+      setLocationMessage(`Location enabled near ${selectedHotspot}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not enable location.";
+      setLocationMessage(message);
+      Alert.alert("Location unavailable", message);
+    } finally {
+      setIsRequestingLocation(false);
+    }
+  }
+
+  async function dismissLocationPrompt() {
+    await AsyncStorage.setItem(locationPromptDismissedKey, "true");
+    setShowLocationPrompt(false);
+    setLocationPermission((current) => current === "unknown" ? "undetermined" : current);
+    setLocationMessage("Location skipped. You can enable it later in Profile.");
+  }
+
+  async function stopLocationSharing() {
+    setLocationMessage("");
+    setIsRequestingLocation(true);
+    try {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) throw new Error("Please sign in again.");
+      await clearNearbySession(data.user.id);
+      setUserLocation(null);
+      setIsNearbyVisible(false);
+      setLocationMessage("Location sharing stopped for this session.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not stop location sharing.";
+      setLocationMessage(message);
+    } finally {
+      setIsRequestingLocation(false);
+    }
+  }
+
+  function normalizeLocationStatus(status: Location.PermissionStatus) {
+    if (status === Location.PermissionStatus.GRANTED) return "granted";
+    if (status === Location.PermissionStatus.DENIED) return "denied";
+    return "undetermined";
+  }
+
+  async function updateCurrentLocation(showError = true) {
+    try {
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const currentLocation = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      };
+      setUserLocation(currentLocation);
+      return currentLocation;
+    } catch (error) {
+      if (!showError) throw error;
+      const message = error instanceof Error ? error.message : "Could not read your location.";
+      setLocationMessage(message);
+      throw error;
+    }
+  }
 
   async function completeEmailConfirmation(url: string) {
     setCallbackMessage("Confirming your email...");
@@ -1058,6 +1182,7 @@ export default function App() {
             ) : selectedDemoProfile ? (
               <ProfileDetail
                 profile={selectedDemoProfile}
+                distance={getDistanceText(userLocation, selectedDemoProfile.coordinate, selectedDemoProfile.distance)}
                 onBack={() => setSelectedProfile(null)}
                 onRequest={() => {
                   setRequestProfile(selectedProfile);
@@ -1081,6 +1206,14 @@ export default function App() {
                   )}
                   {appTab === 0 && (
                     <>
+                      {showLocationPrompt ? (
+                        <LocationPrompt
+                          isLoading={isRequestingLocation}
+                          onAllow={requestLocationPermission}
+                          onSkip={dismissLocationPrompt}
+                        />
+                      ) : null}
+                      {locationMessage ? <Text style={locationPermission === "granted" ? styles.progressText : styles.errorText}>{locationMessage}</Text> : null}
                       <View style={styles.homeHeader}>
                         <View>
                           <Text style={styles.titleLeft}>Nearby now</Text>
@@ -1107,7 +1240,7 @@ export default function App() {
                               <Text style={styles.profileName}>{profile.name}, {profile.age}</Text>
                               <Text style={styles.caption}>{profile.place}</Text>
                               <View style={styles.metaRow}>
-                                <Text style={styles.metaPill}>{profile.distance}</Text>
+                                <Text style={styles.metaPill}>{getDistanceText(userLocation, profile.coordinate, profile.distance)}</Text>
                                 <Text style={styles.metaPill}>{profile.degree}</Text>
                               </View>
                             </View>
@@ -1133,7 +1266,13 @@ export default function App() {
                         <EmptyDiscover onBrowseHotspots={() => setAppTab(1)} />
                       ) : (
                         <>
-                          <DiscoverCard profile={demoProfiles[currentDiscoverIndex]} remaining={discoverQueue.length} pulse={pulse} hotspot={selectedHotspot} />
+                          <DiscoverCard
+                            profile={demoProfiles[currentDiscoverIndex]}
+                            distance={getDistanceText(userLocation, demoProfiles[currentDiscoverIndex].coordinate, demoProfiles[currentDiscoverIndex].distance)}
+                            remaining={discoverQueue.length}
+                            pulse={pulse}
+                            hotspot={selectedHotspot}
+                          />
                           <View style={styles.discoverActions}>
                             <Pressable style={styles.actionCircle} onPress={() => passDiscoverProfile(currentDiscoverIndex)}>
                               <Text style={styles.actionX}>X</Text>
@@ -1226,6 +1365,9 @@ export default function App() {
                         draft={draft}
                         isEditing={isEditingProfile}
                         message={profileSaveMessage}
+                        locationPermission={locationPermission}
+                        locationMessage={locationMessage}
+                        isRequestingLocation={isRequestingLocation}
                         onEdit={() => {
                           setProfileSaveMessage("");
                           setIsEditingProfile(true);
@@ -1236,6 +1378,8 @@ export default function App() {
                         }}
                         onSave={saveProfileBasics}
                         onDraftChange={(nextDraft) => setDraft((current) => ({ ...current, ...nextDraft }))}
+                        onRequestLocation={requestLocationPermission}
+                        onStopLocationSharing={stopLocationSharing}
                       />
                     </>
                   )}
@@ -1255,6 +1399,40 @@ export default function App() {
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
+}
+
+function getDistanceText(origin: GeoPoint | null, target: GeoPoint | undefined, fallback: string) {
+  if (!origin || !target) return fallback;
+  return formatDistance(calculateDistanceMeters(origin, target));
+}
+
+function calculateDistanceMeters(origin: GeoPoint, target: GeoPoint) {
+  const earthRadiusMeters = 6371000;
+  const originLatitude = degreesToRadians(origin.latitude);
+  const targetLatitude = degreesToRadians(target.latitude);
+  const latitudeDelta = degreesToRadians(target.latitude - origin.latitude);
+  const longitudeDelta = degreesToRadians(target.longitude - origin.longitude);
+  const a = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(originLatitude) * Math.cos(targetLatitude) * Math.sin(longitudeDelta / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return earthRadiusMeters * c;
+}
+
+function degreesToRadians(degrees: number) {
+  return degrees * (Math.PI / 180);
+}
+
+function formatDistance(distanceMeters: number) {
+  if (distanceMeters < 1000) {
+    const roundedMeters = Math.max(10, Math.round(distanceMeters / 10) * 10);
+    return `${roundedMeters} m`;
+  }
+
+  const roundedKilometers = distanceMeters < 10000
+    ? Math.round(distanceMeters / 100) / 10
+    : Math.round(distanceMeters / 1000);
+  return `${roundedKilometers} km`;
 }
 
 function Chip(props: { selected: boolean; label: string; onPress: () => void }) {
@@ -1502,7 +1680,7 @@ function ProfilePhoto(props: { profile: DemoProfile; style: StyleProp<ViewStyle>
   );
 }
 
-function DiscoverCard(props: { profile: DemoProfile; remaining: number; pulse: Animated.Value; hotspot: string }) {
+function DiscoverCard(props: { profile: DemoProfile; distance: string; remaining: number; pulse: Animated.Value; hotspot: string }) {
   const lift = props.pulse.interpolate({
     inputRange: [0, 1],
     outputRange: [0, -4],
@@ -1524,7 +1702,7 @@ function DiscoverCard(props: { profile: DemoProfile; remaining: number; pulse: A
         </View>
         <Text style={styles.caption}>{props.profile.uni}</Text>
         <View style={styles.metaRow}>
-          <Text style={styles.metaPill}>{props.profile.distance}</Text>
+          <Text style={styles.metaPill}>{props.distance}</Text>
           <Text style={styles.metaPill}>{props.profile.degree}</Text>
         </View>
         <Text style={styles.bioText}>{props.profile.bio}</Text>
@@ -1559,7 +1737,7 @@ function EmptyDiscover(props: { onBrowseHotspots: () => void }) {
   );
 }
 
-function ProfileDetail(props: { profile: DemoProfile; onBack: () => void; onRequest: () => void }) {
+function ProfileDetail(props: { profile: DemoProfile; distance: string; onBack: () => void; onRequest: () => void }) {
   return (
     <ScrollView style={styles.flex} contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled">
       <Pressable style={styles.backButton} onPress={props.onBack}>
@@ -1573,7 +1751,7 @@ function ProfileDetail(props: { profile: DemoProfile; onBack: () => void; onRequ
         <View style={styles.discoverCopy}>
           <Text style={styles.discoverName}>{props.profile.name}, {props.profile.age}</Text>
           <Text style={styles.caption}>{props.profile.uni} - {props.profile.degree}</Text>
-          <Text style={styles.caption}>{props.profile.place} - {props.profile.distance}</Text>
+          <Text style={styles.caption}>{props.profile.place} - {props.distance}</Text>
           <Text style={styles.bioText}>{props.profile.bio}</Text>
         </View>
       </View>
@@ -1642,14 +1820,78 @@ function ChatScreen(props: { match: { profile: DemoProfile; messages: Array<{ te
   );
 }
 
+function LocationPrompt(props: { isLoading: boolean; onAllow: () => void; onSkip: () => void }) {
+  return (
+    <View style={styles.locationPrompt}>
+      <View style={styles.locationIcon}>
+        <View style={styles.locationDot} />
+      </View>
+      <View style={styles.profileCopy}>
+        <Text style={styles.heading}>Use your location?</Text>
+        <Text style={styles.caption}>Nearby only works when UniMatch can place you roughly on campus.</Text>
+      </View>
+      <View style={styles.locationActions}>
+        <Pressable style={styles.outlineSmall} disabled={props.isLoading} onPress={props.onSkip}>
+          <Text style={styles.outlineText}>Not now</Text>
+        </Pressable>
+        <Pressable style={[styles.ctaSmall, props.isLoading && styles.disabled]} disabled={props.isLoading} onPress={props.onAllow}>
+          <Text style={styles.ctaText}>{props.isLoading ? "Checking..." : "Allow"}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function LocationSettings(props: {
+  permission: "unknown" | "granted" | "denied" | "undetermined";
+  message: string;
+  isLoading: boolean;
+  onRequest: () => void;
+  onStop: () => void;
+}) {
+  const statusLabel = props.permission === "granted"
+    ? "Enabled"
+    : props.permission === "denied"
+      ? "Blocked"
+      : "Not enabled";
+
+  return (
+    <View style={styles.reviewCard}>
+      <View style={styles.settingsHeader}>
+        <View>
+          <Text style={styles.heading}>Location</Text>
+          <Text style={styles.caption}>Controls nearby visibility and campus discovery.</Text>
+        </View>
+        <Text style={[styles.statusText, props.permission === "granted" && styles.statusSuccess, props.permission === "denied" && styles.statusDanger]}>
+          {statusLabel}
+        </Text>
+      </View>
+      {props.message ? <Text style={props.permission === "granted" ? styles.progressText : styles.errorText}>{props.message}</Text> : null}
+      <View style={styles.actionRow}>
+        <Pressable style={[styles.outlineSmall, props.isLoading && styles.disabled]} disabled={props.isLoading} onPress={props.onStop}>
+          <Text style={styles.outlineText}>Stop sharing</Text>
+        </Pressable>
+        <Pressable style={[styles.ctaSmall, props.isLoading && styles.disabled]} disabled={props.isLoading} onPress={props.onRequest}>
+          <Text style={styles.ctaText}>{props.isLoading ? "Checking..." : "Use location"}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 function ProfileTab(props: {
   draft: ProfileDraft;
   isEditing: boolean;
   message: string;
+  locationPermission: "unknown" | "granted" | "denied" | "undetermined";
+  locationMessage: string;
+  isRequestingLocation: boolean;
   onEdit: () => void;
   onCancel: () => void;
   onSave: () => void;
   onDraftChange: (draft: Partial<ProfileDraft>) => void;
+  onRequestLocation: () => void;
+  onStopLocationSharing: () => void;
 }) {
   if (props.isEditing) {
     return (
@@ -1686,6 +1928,13 @@ function ProfileTab(props: {
         <Text style={styles.caption}>{props.draft.bio || "No bio yet."}</Text>
         <Text style={styles.caption}>Looking to meet: {props.draft.wantsToMeet.join(", ").replace(/_/g, " ")}</Text>
       </View>
+      <LocationSettings
+        permission={props.locationPermission}
+        message={props.locationMessage}
+        isLoading={props.isRequestingLocation}
+        onRequest={props.onRequestLocation}
+        onStop={props.onStopLocationSharing}
+      />
       {props.message ? <Text style={styles.progressText}>{props.message}</Text> : null}
       <Pressable style={styles.outline} onPress={props.onEdit}>
         <Text style={styles.outlineText}>Edit profile</Text>
@@ -1772,12 +2021,18 @@ const styles = StyleSheet.create({
   notice: { backgroundColor: theme.tagBg, borderRadius: 22, padding: 16, gap: 8 },
   reviewCard: { backgroundColor: theme.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: 22, padding: 16, gap: 10 },
   statusText: { alignSelf: "flex-start", backgroundColor: theme.tagBg, color: theme.tagText, borderRadius: 999, overflow: "hidden", paddingHorizontal: 10, paddingVertical: 5, fontSize: 13, fontWeight: "600" },
+  statusSuccess: { backgroundColor: "#ecfdf3", color: "#067647" },
+  statusDanger: { backgroundColor: "#fef3f2", color: "#b42318" },
   reviewRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   reviewLabel: { flex: 1, color: theme.text, fontSize: 14 },
   reviewValue: { color: theme.muted, fontSize: 13, fontWeight: "600" },
   reviewPassed: { color: "#067647" },
   reviewFailed: { color: "#b42318" },
   homeHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 2 },
+  locationPrompt: { backgroundColor: theme.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.separator, borderRadius: 22, padding: 14, gap: 12, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 14, shadowOffset: { width: 0, height: 7 }, elevation: 1 },
+  locationIcon: { width: 42, height: 42, borderRadius: 16, backgroundColor: theme.tagBg, alignItems: "center", justifyContent: "center" },
+  locationDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: theme.accent },
+  locationActions: { flexDirection: "row", gap: 10 },
   livePill: { backgroundColor: "#ecfdf3", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   livePillText: { color: "#067647", fontSize: 12, fontWeight: "700" },
   visibilityToggle: { flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "#e9f7f1", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 },
@@ -1880,6 +2135,7 @@ const styles = StyleSheet.create({
   requestHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   pendingPill: { alignSelf: "flex-start", backgroundColor: theme.surface, color: theme.muted, borderRadius: 999, overflow: "hidden", paddingHorizontal: 9, paddingVertical: 5, fontSize: 12, fontWeight: "800" },
   profileHeader: { alignItems: "center", gap: 8 },
+  settingsHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 },
   chatTitle: { padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.separator },
   chatTitleText: { textAlign: "center", fontSize: 16, fontWeight: "600", color: theme.text },
   chatBody: { padding: theme.screenPadding, gap: 10 },

@@ -148,6 +148,37 @@ export async function getLatestVerificationReview(userId: string): Promise<Verif
   };
 }
 
+export async function saveNearbySession(userId: string, latitude: number, longitude: number, areaLabel?: string) {
+  const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+  const cleanup = await supabase
+    .from("nearby_sessions")
+    .delete()
+    .eq("user_id", userId);
+
+  if (cleanup.error) throw new Error(`nearby session cleanup failed: ${cleanup.error.message}`);
+
+  const result = await supabase.from("nearby_sessions").insert({
+    user_id: userId,
+    coarse_lat: roundCoordinate(latitude),
+    coarse_lng: roundCoordinate(longitude),
+    area_label: areaLabel ?? null,
+    expires_at: expiresAt,
+  });
+
+  if (result.error) throw new Error(`nearby session save failed: ${result.error.message}`);
+  return result;
+}
+
+export async function clearNearbySession(userId: string) {
+  const result = await supabase
+    .from("nearby_sessions")
+    .delete()
+    .eq("user_id", userId);
+
+  if (result.error) throw new Error(`nearby session cleanup failed: ${result.error.message}`);
+  return result;
+}
+
 export async function sendMessageRequest(recipientId: string, note: string) {
   const { data: user } = await supabase.auth.getUser();
   if (!user.user) throw new Error("Not signed in");
@@ -157,6 +188,10 @@ export async function sendMessageRequest(recipientId: string, note: string) {
     recipient_id: recipientId,
     note,
   });
+}
+
+function roundCoordinate(value: number) {
+  return Math.round(value * 1000) / 1000;
 }
 
 async function uploadProfilePhoto(userId: string, photoUri: string) {
